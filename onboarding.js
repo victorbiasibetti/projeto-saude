@@ -18,6 +18,9 @@ const ONB = {
   draft: {},        // respostas acumuladas
 };
 
+// flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
+const DEFER_KEY = "projeto_enterrada_defer_v1";
+
 const PROJECT_SUGGESTIONS = [
   "Projeto -5kg",
   "Projeto Verão",
@@ -265,18 +268,30 @@ function finishOnboarding(){
     macros: d.macros || null,
     onboardedAt: new Date().toISOString().slice(0,10),
   };
+  try{ localStorage.removeItem(DEFER_KEY); }catch(e){} // já configurou
   saveUser();
   closeOnboarding();
   refreshAll(); // re-render + applyUser (atualiza header e tag de kcal/macros)
 }
 
-function skipOnboarding(){
-  // cria um perfil mínimo só pra não disparar de novo
-  user = { name:"", project:"Projeto Enterrada", skipped:true,
-           onboardedAt:new Date().toISOString().slice(0,10) };
-  saveUser();
+// "Responder depois": fecha o overlay, vai pra tela principal e marca pra não
+// re-abrir sozinho. O usuário retoma quando quiser pelo botão "Configurar perfil".
+function deferOnboarding(){
+  try{ localStorage.setItem(DEFER_KEY, "1"); }catch(e){}
   closeOnboarding();
-  refreshAll();
+}
+
+// preenche os campos com o que já existe no perfil (ao reabrir/editar)
+function prefillFromUser(){
+  if(!user) return;
+  if(user.name) $("onbName").value = user.name;
+  if(user.project) $("onbProject").value = user.project;
+  if(user.height) $("onbHeight").value = user.height;
+  if(user.weight) $("onbWeight").value = user.weight;
+  if(user.age) $("onbAge").value = user.age;
+  if(user.sex) $("onbSex").value = user.sex;
+  if(user.activity) $("onbActivity").value = user.activity;
+  if(user.goal) $("onbGoal").value = user.goal;
 }
 
 function openOnboarding(){
@@ -290,6 +305,7 @@ function openOnboarding(){
     c.addEventListener("click", ()=>{ $("onbProject").value = s; });
     chips.appendChild(c);
   });
+  prefillFromUser();
   $("onboarding").hidden = false;
   document.body.classList.add("onb-open");
   showStep(1);
@@ -353,7 +369,8 @@ function wireOnboarding(){
   $("onbBack").addEventListener("click", ()=>{
     if(ONB.step > 1) showStep(ONB.step - 1);
   });
-  $("onbSkip").addEventListener("click", skipOnboarding);
+  $("onbSkip").addEventListener("click", deferOnboarding);
+  $("profileBtn").addEventListener("click", openOnboarding);
 
   // recalcula métricas ao vivo no step 3
   $("onbActivity").addEventListener("change", updateMetrics);
@@ -403,5 +420,8 @@ function fallbackCopy(txt, done){
 
 (function initOnboarding(){
   wireOnboarding();
-  if(!user) openOnboarding();   // dispara só pra quem ainda não configurou
+  // auto-abre só pra quem nunca configurou E não escolheu "Responder depois"
+  let deferred = false;
+  try{ deferred = !!localStorage.getItem(DEFER_KEY); }catch(e){}
+  if(!user && !deferred) openOnboarding();
 })();

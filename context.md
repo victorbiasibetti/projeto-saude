@@ -75,8 +75,10 @@ São TRÊS chaves separadas:
   Se essa chave está vazia (`user == null`), `onboarding.js` abre o overlay de configuração.
   `applyUser()` personaliza o cabeçalho (projeto vira título; nome+medidas+kcal no subtítulo)
   e a tag de kcal do cardápio. BMR = Mifflin-St Jeor; TDEE = BMR × fator de atividade;
-  `targetKcal = TDEE` (sem ajuste — o objetivo só orienta a IA). "Pular tudo" grava um perfil
-  mínimo `{skipped:true}` só pra não re-disparar.
+  `targetKcal = TDEE` (sem ajuste — o objetivo só orienta a IA). **"Responder depois"** fecha o
+  overlay e grava a flag `projeto_enterrada_defer_v1` (não persiste perfil) pra não re-abrir
+  sozinho; o usuário retoma quando quiser pelo botão **"Configurar perfil"** no rodapé (que chama
+  `openOnboarding()`, com prefill dos campos já preenchidos). Concluir limpa a flag de defer.
 
 
 - **`projeto_enterrada_plan_v1`** — o CONTEÚDO de dieta+treino (o "plano"). Semeado a partir
