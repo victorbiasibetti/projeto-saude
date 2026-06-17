@@ -32,8 +32,10 @@ dependências externas além das fontes do Google Fonts via CDN.
 ### Google Analytics (GA4)
 - Snippet `gtag.js` **inline** no `<head>` do `index.html`, Measurement ID `G-BKR1CT2JB6`.
   ID é **público por design** (site estático, sem build → não dá pra esconder). Sem CI/Secret.
-- **Guard de host:** o snippet só carrega se `location.hostname` terminar em `projetosaude.life`
-  ou `github.io` → acessos locais (`file://`/localhost) NÃO contam no GA.
+- **Guard de host:** só carrega no host oficial — `projetosaude.life` (+ subdomínios com
+  fronteira de ponto) ou `victorbiasibetti.github.io`. Acessos locais (`file://`/localhost) e
+  **forks de terceiros** (outro `*.github.io`) NÃO contam no GA. (Fronteira de ponto evita
+  casar lookalikes tipo `xprojetosaude.life`.)
 - Coleta só métricas de **uso/navegação** (não os dados de saúde, que seguem só no localStorage).
   Por isso a barra de privacidade diz "dados **de saúde** não são compartilhados".
 - `.env.sample` documenta `GA_MEASUREMENT_ID` pra quem forkar usar o próprio GA (o site não lê
