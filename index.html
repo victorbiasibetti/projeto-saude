@@ -144,23 +144,14 @@
   <!-- ===================== TREINO ===================== -->
   <section class="panel" id="tab-treino" role="tabpanel">
 
-    <div class="phase-banner" id="phaseBanner"></div>
-
     <div class="section-head">
       <h3>Divisão semanal</h3>
-      <span class="kcal-tag">Seg A · Qua B · Sex C</span>
     </div>
     <div class="week-grid" id="weekGrid"></div>
 
-    <div class="phase-picker">
-      <span>Ver treino na fase:</span>
-      <div class="phase-btns" id="phaseBtns">
-        <button data-phase="0" class="phase-btn">Fase 1 · sem 1-4</button>
-        <button data-phase="1" class="phase-btn">Fase 2 · sem 5-10</button>
-        <button data-phase="2" class="phase-btn">Fase 3 · sem 11+</button>
-      </div>
+    <div class="section-head">
+      <h3>Seus treinos</h3>
     </div>
-
     <div class="workouts" id="workouts"></div>
   </section>
 </main>
@@ -258,6 +249,32 @@
       <p class="onb-note">Meta calórica = seu TDEE: <strong id="onbTargetVal">—</strong> kcal/dia.
         O objetivo orienta a IA na distribuição das refeições. Fórmula Mifflin-St Jeor —
         estimativa, não prescrição médica.</p>
+
+      <div class="onb-grid">
+        <div>
+          <label class="onb-label">Treinos por semana</label>
+          <select id="onbDays" class="onb-input">
+            <option value="2">2 dias</option>
+            <option value="3" selected>3 dias</option>
+            <option value="4">4 dias</option>
+            <option value="5">5 dias</option>
+            <option value="6">6 dias</option>
+          </select>
+        </div>
+        <div>
+          <label class="onb-label">Nível de experiência</label>
+          <select id="onbLevel" class="onb-input">
+            <option value="iniciante" selected>Iniciante</option>
+            <option value="intermediario">Intermediário</option>
+            <option value="avancado">Avançado</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="onb-label">Limitações ou lesões (opcional)</label>
+      <textarea id="onbLimits" class="onb-input" rows="2"
+        placeholder="Ex.: dor no joelho, ombro sensível, sem acesso a barra fixa…"></textarea>
+      <p class="onb-note">Esses dados vão pro prompt pra montar seu treino sob medida.</p>
     </section>
 
     <!-- STEP 4 — prompt p/ IA + import -->
@@ -265,7 +282,7 @@
       <ol class="onb-steps-list">
         <li>Copie o prompt abaixo e cole no Chat-GPT (ou outra IA).</li>
         <li>O Chat-GPT vai te devolver uma resposta.</li>
-        <li>Cole essa resposta aqui embaixo e clique em Importar cardápio.</li>
+        <li>Cole essa resposta aqui embaixo e clique em Importar plano.</li>
       </ol>
 
       <label class="onb-label">Prompt pra IA</label>
@@ -277,10 +294,10 @@
       <button id="onbPasteBtn" class="onb-btn ghost small onb-block-btn">📥 Colar resposta do Chat-GPT</button>
 
       <div class="onb-import-row">
-        <button id="onbImportBtn" class="onb-btn primary small">Importar cardápio</button>
+        <button id="onbImportBtn" class="onb-btn primary small">Importar plano</button>
         <span id="onbImportMsg" class="onb-import-msg"></span>
       </div>
-      <p class="onb-note">Pode pular esta etapa — o cardápio padrão é carregado e você edita depois.</p>
+      <p class="onb-note">Pode pular esta etapa — o plano padrão é carregado e você edita depois.</p>
     </section>
 
     <div class="onb-actions">

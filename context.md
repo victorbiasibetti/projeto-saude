@@ -47,9 +47,9 @@ dependências externas além das fontes do Google Fonts via CDN.
 saude/
   index.html   — estrutura + as duas tabs + overlay de onboarding. Liga style.css e os 3 JS.
   style.css    — tema "performance dashboard" escuro. Todas as cores em CSS vars no :root.
-  data.js      — TEMPLATE padrão do plano (DEFAULT_PLAN): refeições, cardápio, divisão
-                 semanal, treinos, fases, cicloInicio. NÃO é mais a fonte de verdade em
-                 runtime — é só o seed copiado pro localStorage na 1ª carga.
+  data.js      — TEMPLATE padrão do plano (DEFAULT_PLAN v2): refeições, cardápio, divisão
+                 semanal, treinos (sem fases). NÃO é mais a fonte de verdade em runtime —
+                 é só o seed copiado pro localStorage na 1ª carga.
   app.js       — toda a lógica (render, localStorage, seleção de dia, tabs, fases) + carga
                  do plano e do perfil (loadPlan/seedPlan/savePlan/restorePlan, loadUser/
                  saveUser/applyUser/refreshAll).
@@ -95,12 +95,17 @@ São TRÊS chaves separadas:
 
 
 - **`projeto_enterrada_plan_v1`** — o CONTEÚDO de dieta+treino (o "plano"). Semeado a partir
-  de `DEFAULT_PLAN` (data.js) na 1ª carga via `seedPlan()`, depois lido de lá. Estrutura =
-  o objeto `DEFAULT_PLAN`: `{ version, meals[], menu[], week[], workouts[], phases[], cicloInicio }`.
-  `cicloInicio` é string `"YYYY-MM-DD"` (não Date). Em app.js, `plan` guarda o objeto e os
-  espelhos `MEALS/MENU/WEEK/WORKOUTS/PHASES/CICLO_INICIO` apontam pras seções (via `syncPlanRefs()`).
-  Editar o plano = mexer em `plan` + `savePlan()` + re-render. `restorePlan()` volta ao default.
-  Motivo da mudança: deixar dieta/treino dinâmicos por pessoa (cada navegador edita o próprio).
+  de `DEFAULT_PLAN` (data.js) na 1ª carga via `seedPlan()`, depois lido de lá. **Formato v2**
+  (sem fases): `{ version:2, meals[], menu[], week[], workouts[] }`.
+  - `workouts[]` = `{ id, accent, titulo, sub, ex:[{nome, set, grupo, obs}] }` — `set` é
+    "séries×reps" único (sem 3 colunas de fase).
+  - `week[]` = 7 entradas `{ dow(0..6), dia, tag, nome }`; `tag` = id de um treino ou "off".
+  - Espelhos em app.js: `MEALS/MENU/WEEK/WORKOUTS` (via `syncPlanRefs()`).
+  - **Migração v1→v2** (`migratePlan` em app.js): plano antigo (treino em 3 fases +
+    `phases`/`cicloInicio`) é convertido — **dieta preservada** (menu/meals), treino reescrito
+    pro novo default, `phases`/`cicloInicio` removidos. `isValidPlan` exige `version===2`.
+  - Editar = mexer em `plan` + `savePlan()` + re-render. `restorePlan()` volta ao default.
+  - Dieta E treino são dinâmicos por pessoa: o onboarding importa ambos da IA num JSON só.
 - **`projeto_enterrada_v1`** — os DADOS do usuário (checks diários + cerveja). Estrutura:
 
 ```js
@@ -124,12 +129,15 @@ São TRÊS chaves separadas:
 
 ### Onboarding & Backup (onboarding.js)
 1. **Fluxo de 4 steps** (overlay modal) que abre na 1ª visita (sem perfil): (1) nome + projeto
-   com chips de sugestão; (2) altura/peso/idade/sexo; (3) BMR + TDEE + objetivo → meta de kcal;
-   (4) gera um prompt parametrizado p/ colar numa IA e importa o JSON do cardápio que ela devolve.
-2. **Import do cardápio:** o JSON `{ targetKcal, macros, menu[] }` vira `plan.menu`. Os checks
-   diários (`plan.meals`) são DERIVADOS do menu (`deriveMeals`): cada refeição vira um check
-   (key = slug do título) + um check fixo "Treino" no fim (a aba Treino e o "dia 100%" dependem
-   dele). Parser tolerante (tira cercas ```json```, recorta de `{` a `}`, sanitiza `accent`).
+   com chips de sugestão; (2) altura/peso/idade/sexo; (3) nível de atividade + objetivo →
+   BMR/TDEE/meta de kcal, **+ inputs de treino** (dias/semana, nível, limitações); (4) gera UM
+   prompt combinado (dieta+treino) p/ colar numa IA e importa o JSON que ela devolve.
+2. **Import do plano (`doImportPlan`):** o JSON `{ targetKcal, macros, menu[], workouts[], week[] }`
+   vira `plan.menu` + (se válido) `plan.workouts`/`plan.week`. Os checks diários (`plan.meals`)
+   são DERIVADOS do menu (`deriveMeals`): cada refeição vira um check (key = slug do título) +
+   check fixo "Treino" no fim. **Treino é opcional**: se vier ausente/ruim, mantém o treino atual
+   e a dieta entra mesmo assim. `sanitizeWorkouts`/`sanitizeWeek` validam (accent, tag, 7 dias,
+   tamanhos). Parser tolerante (tira cercas ```json```, recorta de `{` a `}`).
 3. **Export/Import geral** (botões no rodapé): exporta `{user, plan, state}` num `.json` p/
    migrar entre navegadores; importar grava as 3 chaves e recarrega a página.
 
@@ -148,13 +156,13 @@ São TRÊS chaves separadas:
    Navegação entre meses pelos botões ‹ ›.
 5. **Reset:** botão no rodapé zera tudo (com confirm).
 
-### Tab Treino
-1. **Banner de fase atual:** calcula automaticamente em que semana/fase do ciclo o usuário está,
-   a partir de `CICLO_INICIO` (data.js) comparado com hoje. 3 fases (ver abaixo).
-2. **Divisão semanal:** grid Seg→Dom. Seg=A, Qua=B, Sex=C, resto descanso. Hoje destacado.
-3. **Seletor de fase (1/2/3):** mostra os exercícios de cada treino na fase escolhida. Começa na
-   fase atual do ciclo. Exercícios que só entram depois aparecem com "—".
-4. **Os 3 treinos (A/B/C)** com exercícios, séries×reps por fase, grupo muscular e técnica.
+### Tab Treino (sem fases — v2)
+1. **Divisão semanal:** grid Seg→Dom a partir de `WEEK`. Cada dia = tag (id de treino) ou
+   descanso. Hoje destacado. Cores tag-A..F.
+2. **Seus treinos:** cards de `WORKOUTS` (`renderWorkouts`), cada um com exercícios
+   `{nome, set, grupo, obs}`. `set` = séries×reps único. Sem seletor de fase/banner.
+3. **Dinâmico:** o onboarding gera os treinos pela IA (N = dias/semana) e importa junto com a
+   dieta. Sem onboarding, usa o template padrão (ABC do Victor, achatado pra set único).
 
 ## Conteúdo do plano (resumo — detalhes completos em data.js)
 
@@ -169,16 +177,13 @@ São TRÊS chaves separadas:
 - Creatina 5 g TODO dia. Dia sem treino: tira 1 batata do almoço + 1 col. arroz da janta.
 - Cerveja (sem glúten): meta máx ~2 L, 1 dia só no fim de semana; cortar carbo no dia que beber.
 
-### Treino — ABC com VOLUME PROGRESSIVO (3 fases)
-Decisão importante: o usuário é INICIANTE e sentiu 5 dias de dor com volume alto. Por isso o
-plano cresce gradualmente. NÃO voltar pro volume cheio de cara.
-- **Fase 1 (sem 1-4) Adaptação:** poucos exercícios, carga leve, SEM pliometria. Aprender o movimento.
-- **Fase 2 (sem 5-10) Construção:** +1-2 exercícios/treino, entra box jump e salto medido.
-- **Fase 3 (sem 11+) Completo:** treino cheio, agacho 5x5, pliometria reativa (agacho com salto).
-- Divisão: **Segunda A** (peito/ombro/tríceps), **Quarta B** (costas/bíceps),
-  **Sexta C** (perna pesada — dia principal do salto). Ter/Qui/Sáb/Dom descanso.
-- `cicloInicio: "2026-06-01"` no plano (data.js / localStorage). Em app.js vira Date local via
-  `keyToDate`. Mudar essa data desloca o cálculo de fases.
+### Treino — divisão semanal (template padrão, v2, SEM fases)
+O modelo de 3 fases progressivas (v1) foi removido. Agora o treino é uma divisão simples:
+exercícios com `set` único (séries×reps), distribuídos numa semana.
+- Template padrão (DEFAULT_PLAN): **A** peito/ombro/tríceps (Seg), **B** costas/bíceps (Qua),
+  **C** perna (Sex); resto descanso. Valores achatados da antiga "fase 3" (mais completa).
+- Pra novos usuários, o **onboarding gera o treino pela IA** (N treinos = dias/semana escolhidos),
+  importado junto com a dieta no mesmo JSON. Ver seção Onboarding.
 
 ## Decisões e armadilhas (pra não repetir erros)
 
@@ -192,14 +197,15 @@ plano cresce gradualmente. NÃO voltar pro volume cheio de cara.
 - Datas: sempre construir/parsear como LOCAL (`new Date(y, m-1, d)` e `ymd()`), nunca UTC, senão
   o dia "pula" dependendo do fuso (Victor está em GMT-3, Santa Cruz do Sul/RS).
 - IDs no HTML que o JS depende: `heroEyebrow, heroDate, heroSub, backToToday, todayChecks,
-  beerInput, ringFg, dayPct, todayPill, menuGrid, monthTable, monthLabel, prevMonth, nextMonth,
-  dietLegend, phaseBanner, weekGrid, phaseBtns, workouts, resetBtn, restorePlanBtn`.
+  beerInput, ringFg, dayPct, kcalRingFg, dayKcal, dayKcalSub, todayPill, menuGrid, monthTable,
+  monthLabel, prevMonth, nextMonth, dietLegend, weekGrid, workouts, resetBtn, restorePlanBtn`.
+  Onboarding: `onbDays, onbLevel, onbLimits` (inputs de treino no step 3).
 
 ## Ideias / próximos passos sugeridos (NÃO feitos ainda)
 
 - **Aba/seção de Progressão:** registrar peso corporal e altura do salto vertical por semana
   (existia na planilha Excel original, ainda não foi portada pro app). Bom candidato pro próximo passo.
-- Permitir editar o `CICLO_INICIO` pela própria interface.
+- UI pra editar treino/cardápio direto no app (hoje só via re-onboarding/IA).
 - Marcar visualmente no calendário os dias de treino (A/B/C) esperados vs. cumpridos.
 - PWA / instalável, pra abrir como app no celular.
 

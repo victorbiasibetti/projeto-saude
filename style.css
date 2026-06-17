@@ -308,16 +308,6 @@ tr.totals td{ border-top:2px solid var(--line); font-family:var(--mono); font-we
 }
 
 /* ===================== TREINO ===================== */
-.phase-banner{
-  background:linear-gradient(135deg, rgba(198,255,58,.10), var(--panel));
-  border:1px solid var(--line); border-left:4px solid var(--lime);
-  border-radius:var(--radius); padding:18px 20px; margin-bottom:8px;
-}
-.phase-banner .pb-top{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
-.phase-banner h3{ font-family:var(--display); font-size:22px; text-transform:uppercase; letter-spacing:.03em; }
-.phase-banner .pb-week{ font-family:var(--mono); font-size:12px; color:var(--lime); }
-.phase-banner p{ color:var(--txt-dim); font-size:13px; margin-top:6px; }
-
 .week-grid{
   display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin-bottom:8px;
 }
@@ -334,23 +324,12 @@ tr.totals td{ border-top:2px solid var(--line); font-family:var(--mono); font-we
 .wd.tag-A .wd-tag{ color:var(--azul); }
 .wd.tag-B .wd-tag{ color:var(--verde); }
 .wd.tag-C .wd-tag{ color:var(--orange); }
+.wd.tag-D .wd-tag{ color:var(--roxo); }
+.wd.tag-E .wd-tag{ color:var(--lime); }
+.wd.tag-F .wd-tag{ color:var(--cinza); }
 .wd.tag-off .wd-tag{ color:var(--txt-faint); font-size:14px; font-family:var(--body); font-weight:600; padding-top:6px; }
 .wd.today{ border-color:var(--lime); box-shadow:0 0 0 1px var(--lime), 0 0 20px rgba(198,255,58,.18); }
 .wd.today .wd-day{ color:var(--lime); }
-
-.phase-picker{
-  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-  margin:26px 0 16px;
-}
-.phase-picker > span{ font-size:13px; color:var(--txt-dim); }
-.phase-btns{ display:flex; gap:8px; flex-wrap:wrap; }
-.phase-btn{
-  font-family:var(--mono); font-size:12px; cursor:pointer;
-  background:var(--panel); color:var(--txt-dim);
-  border:1px solid var(--line); border-radius:999px; padding:8px 14px; transition:.15s;
-}
-.phase-btn:hover{ color:var(--txt); border-color:var(--txt-faint); }
-.phase-btn.active{ background:var(--lime); color:#10140A; border-color:var(--lime); font-weight:700; }
 
 .workouts{ display:grid; gap:16px; }
 .workout{

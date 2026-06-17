@@ -36,6 +36,12 @@ const GOAL_LABEL = {
   bulk: "ganhar massa",
 };
 
+const LEVEL_LABEL = {
+  iniciante: "iniciante",
+  intermediario: "intermediário",
+  avancado: "avançado",
+};
+
 /* ---------- helpers DOM ---------- */
 function $(id){ return document.getElementById(id); }
 
@@ -107,6 +113,9 @@ function validateStep(n){
   }
   if(n === 3){
     updateMetrics(); // garante draft.bmr/tdee/target atualizados
+    ONB.draft.days = parseInt($("onbDays").value) || 3;
+    ONB.draft.level = $("onbLevel").value;
+    ONB.draft.limits = $("onbLimits").value.trim();
     return true;
   }
   return true;
@@ -140,8 +149,9 @@ function updateMetrics(){
    =========================================================== */
 function buildPrompt(){
   const d = ONB.draft;
+  const dias = d.days || 3;
   return [
-`Aja como um nutricionista esportivo. Monte um cardápio diário para a pessoa abaixo e responda APENAS com um JSON válido — sem texto antes/depois e sem blocos de código (sem crases).`,
+`Aja como nutricionista esportivo E personal trainer. Monte um CARDÁPIO diário e um PLANO DE TREINO para a pessoa abaixo, e responda APENAS com um JSON válido — sem texto antes/depois e sem blocos de código (sem crases).`,
 ``,
 `PESSOA`,
 `- Nome: ${d.name || "—"}`,
@@ -149,6 +159,8 @@ function buildPrompt(){
 `- Sexo: ${d.sex === "M" ? "masculino" : "feminino"} · Idade: ${d.age} · Altura: ${d.height} cm · Peso: ${d.weight} kg`,
 `- Metabolismo basal (BMR): ${d.bmr} kcal · Gasto total (TDEE): ${d.tdee} kcal`,
 `- Meta calórica diária: ${d.targetKcal} kcal (${GOAL_LABEL[d.goal]})`,
+`- Treino: ${dias} dias por semana · nível ${LEVEL_LABEL[d.level] || d.level}`,
+`- Limitações/lesões: ${d.limits ? d.limits : "nenhuma informada"}`,
 ``,
 `FORMATO EXATO DO JSON (responda só isto):`,
 `{`,
@@ -156,15 +168,29 @@ function buildPrompt(){
 `  "macros": "<P>g P / <C>g C / <G>g G",`,
 `  "menu": [`,
 `    { "title": "Café", "icon": "☕", "accent": "azul", "kcal": "~700 kcal · 40 P / 80 C / 20 G", "items": ["alimento 1 com quantidade", "alimento 2 com quantidade"] }`,
+`  ],`,
+`  "workouts": [`,
+`    { "id": "A", "accent": "azul", "titulo": "Treino A — Peito/Ombro/Tríceps", "sub": "frase curta",`,
+`      "ex": [ { "nome": "Supino reto", "set": "4x8-10", "grupo": "Peito", "obs": "dica curta" } ] }`,
+`  ],`,
+`  "week": [`,
+`    { "dow": 1, "dia": "Segunda", "tag": "A", "nome": "Peito/Ombro/Tríceps" },`,
+`    { "dow": 0, "dia": "Domingo", "tag": "off", "nome": "" }`,
 `  ]`,
 `}`,
 ``,
-`REGRAS`,
+`REGRAS DIETA`,
 `- "accent" só pode ser: azul, verde, laranja, roxo, cinza (varie entre as refeições).`,
 `- Crie de 4 a 6 refeições (café, almoço, lanche, janta e opcionalmente ceia/pré-treino).`,
 `- A soma das kcal das refeições deve ficar perto de ${d.targetKcal} kcal.`,
 `- Cada "items" lista alimentos com quantidades, usando comida comum no Brasil.`,
-`- Inclua uma refeição final de "Suplementos & regras" se fizer sentido.`,
+``,
+`REGRAS TREINO`,
+`- Crie exatamente ${dias} treinos em "workouts" (um por dia de treino), id A, B, C... em ordem.`,
+`- Calibre volume e exercícios pro nível ${LEVEL_LABEL[d.level] || d.level} e respeite as limitações.`,
+`- Cada exercício tem "set" no formato "séries x reps" (ex.: "4x8-10", "3x12"). "accent" do treino ∈ {azul, verde, laranja, roxo, cinza}.`,
+`- "week" tem EXATAMENTE 7 entradas, dow 0=Domingo até 6=Sábado. "tag" = id de um treino ou "off". Distribua os ${dias} treinos na semana com descanso entre eles.`,
+``,
 `- Responda somente o JSON, começando com { e terminando com }.`,
   ].join("\n");
 }
@@ -225,10 +251,66 @@ function sanitizeImport(obj){
     menu,
     targetKcal: Number(obj.targetKcal) || null,
     macros: typeof obj.macros === "string" ? obj.macros : null,
+    workouts: sanitizeWorkouts(obj.workouts),   // null se ausente/inválido (treino é opcional)
+    week: null, // preenchido abaixo (depende dos workouts válidos)
+    _weekRaw: obj.week,
   };
 }
 
-function doImportMenu(){
+// sanitiza os treinos da IA → array de {id, accent, titulo, sub, ex[]} ou null
+function sanitizeWorkouts(arr){
+  if(!Array.isArray(arr) || arr.length === 0) return null;
+  const out = [];
+  arr.slice(0,8).forEach((w, i)=>{
+    if(!w || !Array.isArray(w.ex)) return;
+    const ex = w.ex.map(e=>{
+      if(!e || typeof e.nome !== "string" || typeof e.set !== "string") return null;
+      return {
+        nome: e.nome.slice(0,80),
+        set: e.set.slice(0,20),
+        grupo: typeof e.grupo === "string" ? e.grupo.slice(0,40) : "",
+        obs: typeof e.obs === "string" ? e.obs.slice(0,160) : "",
+      };
+    }).filter(Boolean).slice(0,14);
+    if(ex.length === 0) return;
+    const id = (typeof w.id === "string" && w.id.trim()) ? w.id.trim().slice(0,3)
+             : String.fromCharCode(65 + i); // A, B, C...
+    out.push({
+      id,
+      accent: ACCENTS.includes(w.accent) ? w.accent : ACCENTS[i % ACCENTS.length],
+      titulo: typeof w.titulo === "string" && w.titulo ? w.titulo.slice(0,60) : ("Treino " + id),
+      sub: typeof w.sub === "string" ? w.sub.slice(0,80) : "",
+      ex,
+    });
+  });
+  return out.length ? out : null;
+}
+
+const DIA_PT = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+// monta SEMPRE 7 dias (dow 0..6). tag só vale se casar um treino existente, senão "off".
+function sanitizeWeek(rawWeek, workouts){
+  const validTags = new Set((workouts||[]).map(w=>w.id));
+  const byDow = {};
+  if(Array.isArray(rawWeek)){
+    rawWeek.forEach(e=>{
+      if(e && typeof e.dow === "number" && e.dow>=0 && e.dow<=6) byDow[e.dow] = e;
+    });
+  }
+  const week = [];
+  for(let dow=0; dow<=6; dow++){
+    const e = byDow[dow] || {};
+    const tag = (typeof e.tag === "string" && validTags.has(e.tag)) ? e.tag : "off";
+    week.push({
+      dow,
+      dia: DIA_PT[dow],
+      tag,
+      nome: (tag !== "off" && typeof e.nome === "string") ? e.nome.slice(0,40) : "",
+    });
+  }
+  return week;
+}
+
+function doImportPlan(){
   const msg = $("onbImportMsg");
   try{
     let raw;
@@ -250,11 +332,20 @@ function doImportMenu(){
 
     plan.menu = parsed.menu;
     plan.meals = newMeals;
+
+    // treino é OPCIONAL: só substitui se a IA mandou treinos válidos; senão mantém o atual.
+    let treinoMsg = "";
+    if(parsed.workouts){
+      plan.workouts = parsed.workouts;
+      plan.week = sanitizeWeek(parsed._weekRaw, parsed.workouts);
+      treinoMsg = ` e ${parsed.workouts.length} treinos`;
+    }
+
     savePlan();
     if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
     if(parsed.macros) ONB.draft.macros = parsed.macros;
-    refreshAll(); // re-aponta MEALS/MENU e re-renderiza (mesmo se o usuário fizer "Responder depois")
-    msg.textContent = `✓ ${parsed.menu.length} refeições importadas`;
+    refreshAll(); // re-aponta os espelhos e re-renderiza (mesmo se o usuário fizer "Responder depois")
+    msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados`;
     msg.className = "onb-import-msg ok";
   }catch(e){
     msg.textContent = "✗ " + e.message;
@@ -280,6 +371,9 @@ function finishOnboarding(){
     tdee: d.tdee || null,
     targetKcal: d.targetKcal || null,
     macros: d.macros || null,
+    days: d.days || null,
+    level: d.level || null,
+    limits: d.limits || "",
     onboardedAt: new Date().toISOString().slice(0,10),
   };
   try{ localStorage.removeItem(DEFER_KEY); }catch(e){} // já configurou
@@ -306,6 +400,9 @@ function prefillFromUser(){
   if(user.sex) $("onbSex").value = user.sex;
   if(user.activity) $("onbActivity").value = user.activity;
   if(user.goal) $("onbGoal").value = user.goal;
+  if(user.days) $("onbDays").value = user.days;
+  if(user.level) $("onbLevel").value = user.level;
+  if(user.limits) $("onbLimits").value = user.limits;
 }
 
 function openOnboarding(){
@@ -393,7 +490,7 @@ function wireOnboarding(){
   // step 4
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
   $("onbPasteBtn").addEventListener("click", pasteResponse);
-  $("onbImportBtn").addEventListener("click", doImportMenu);
+  $("onbImportBtn").addEventListener("click", doImportPlan);
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);

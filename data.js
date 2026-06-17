@@ -12,8 +12,8 @@
    =========================================================== */
 
 const DEFAULT_PLAN = {
-  // versão do formato do plano (pra futuras migrações)
-  version: 1,
+  // versão do formato do plano. v2 = treino sem fases (divisão semanal + set único).
+  version: 2,
 
   // Refeições que viram checkbox a cada dia
   meals: [
@@ -81,72 +81,61 @@ const DEFAULT_PLAN = {
     },
   ],
 
-  // Divisão semanal (0 = Domingo ... 6 = Sábado, igual getDay do JS)
+  // Divisão semanal (0 = Domingo ... 6 = Sábado, igual getDay do JS).
+  // tag = id do treino (A/B/C...) ou "off". nome = foco (só usado quando não é off).
   week: [
-    { dow: 1, dia: "Segunda", treino: "A — Peito/Ombro/Tríceps", obs: "Começo de semana. Panturrilha sempre.", tag: "A" },
-    { dow: 2, dia: "Terça",   treino: "Descanso",                obs: "Recuperação.", tag: "off" },
-    { dow: 3, dia: "Quarta",  treino: "B — Costas/Bíceps",       obs: "Panturrilha sempre.", tag: "B" },
-    { dow: 4, dia: "Quinta",  treino: "Descanso",                obs: "Recuperação.", tag: "off" },
-    { dow: 5, dia: "Sexta",   treino: "C — Perna pesada",        obs: "DIA PRINCIPAL do salto. Vem descansado.", tag: "C" },
-    { dow: 6, dia: "Sábado",  treino: "Descanso",                obs: "Livre.", tag: "off" },
-    { dow: 0, dia: "Domingo", treino: "Descanso ativo",          obs: "Caminhada/alongamento.", tag: "off" },
+    { dow: 1, dia: "Segunda", tag: "A",   nome: "Peito/Ombro/Tríceps" },
+    { dow: 2, dia: "Terça",   tag: "off", nome: "" },
+    { dow: 3, dia: "Quarta",  tag: "B",   nome: "Costas/Bíceps" },
+    { dow: 4, dia: "Quinta",  tag: "off", nome: "" },
+    { dow: 5, dia: "Sexta",   tag: "C",   nome: "Perna pesada" },
+    { dow: 6, dia: "Sábado",  tag: "off", nome: "" },
+    { dow: 0, dia: "Domingo", tag: "off", nome: "" },
   ],
 
-  // Treinos — cada exercício: [nome, fase1, fase2, fase3, grupo, obs]
+  // Treinos — cada exercício: { nome, set ("séries×reps"), grupo, obs }
   workouts: [
     {
-      id: "A", dia: "Segunda", accent: "azul",
+      id: "A", accent: "azul",
       titulo: "Treino A — Peito / Ombro / Tríceps",
-      sub: "Box jump e supino inclinado entram na Fase 2.",
+      sub: "Empurrar: peito, ombro e tríceps.",
       ex: [
-        ["Supino reto (máquina ou barra)", "3x10", "4x8-10", "4x6-8", "Peito", "Comece na máquina p/ aprender. Última série quase na falha só na Fase 3."],
-        ["Supino inclinado halter", "—", "3x10", "4x8-10", "Peito sup.", "Entra na Fase 2. Amplitude completa, controle a descida."],
-        ["Desenvolvimento halteres/máquina", "3x10", "3x10", "4x8-10", "Ombro", "Não trave o cotovelo, sem balançar o tronco."],
-        ["Elevação lateral", "2x12", "3x12-15", "4x12-15", "Ombro lateral", "Carga leve, foco na contração."],
-        ["Tríceps corda/máquina", "2x12", "3x10-12", "4x10-12", "Tríceps", "Cotovelo fixo, alongue bem embaixo."],
-        ["Panturrilha em pé", "3x15", "4x12-15", "5x12-15", "Panturrilha", "Estímulo de perna todo treino. Pausa 1s no topo."],
-        ["Box jump (caixa baixa)", "—", "4x3", "5x3", "Perna (potência)", "Entra na Fase 2. Início do treino, descansado, aterrissagem suave."],
-        ["Prancha", "2x30s", "3x40s", "3x40-60s", "Core", "Estabilidade p/ transferir força no salto."],
+        { nome: "Supino reto (máquina ou barra)", set: "4x6-8",    grupo: "Peito",         obs: "Última série quase na falha. Controle a descida." },
+        { nome: "Supino inclinado halter",        set: "4x8-10",   grupo: "Peito sup.",    obs: "Amplitude completa, controle a descida." },
+        { nome: "Desenvolvimento halteres/máquina", set: "4x8-10", grupo: "Ombro",         obs: "Não trave o cotovelo, sem balançar o tronco." },
+        { nome: "Elevação lateral",               set: "4x12-15",  grupo: "Ombro lateral", obs: "Carga leve, foco na contração." },
+        { nome: "Tríceps corda/máquina",          set: "4x10-12",  grupo: "Tríceps",       obs: "Cotovelo fixo, alongue bem embaixo." },
+        { nome: "Panturrilha em pé",              set: "5x12-15",  grupo: "Panturrilha",   obs: "Pausa 1s no topo." },
+        { nome: "Prancha",                        set: "3x40-60s", grupo: "Core",          obs: "Estabilidade do tronco." },
       ],
     },
     {
-      id: "B", dia: "Quarta", accent: "verde",
+      id: "B", accent: "verde",
       titulo: "Treino B — Costas / Bíceps",
-      sub: "Comece nas máquinas, evolua p/ peso livre.",
+      sub: "Puxar: costas e bíceps.",
       ex: [
-        ["Puxada alta (pulldown)", "3x10", "4x8-10", "4x6-8", "Costas (largura)", "Pegada pronada, leve até o peito. Base antes da barra fixa."],
-        ["Remada máquina/curvada", "3x10", "4x8-10", "4x8-10", "Costas (espessura)", "Fase 1 na máquina; barra livre da Fase 2 em diante."],
-        ["Remada unilateral halter", "—", "3x10-12", "3x10-12", "Costas", "Entra na Fase 2. Amplitude total, segure 1s na contração."],
-        ["Face pull", "2x15", "3x15", "4x15", "Ombro post.", "Saúde do ombro, importante p/ pressão acima da cabeça."],
-        ["Rosca direta", "3x10", "4x8-10", "4x8-10", "Bíceps", "Sem balanço, controle a negativa."],
-        ["Rosca martelo", "—", "3x10-12", "3x10-12", "Bíceps/antebraço", "Entra na Fase 2. Pegada neutra."],
-        ["Panturrilha sentado", "3x15", "4x15-20", "5x15-20", "Panturrilha (sóleo)", "Estímulo todo treino. Reps altas, pausa embaixo."],
+        { nome: "Puxada alta (pulldown)",   set: "4x6-8",   grupo: "Costas (largura)",   obs: "Pegada pronada, leve até o peito." },
+        { nome: "Remada máquina/curvada",   set: "4x8-10",  grupo: "Costas (espessura)", obs: "Puxe com as costas, não com o braço." },
+        { nome: "Remada unilateral halter", set: "3x10-12", grupo: "Costas",             obs: "Amplitude total, segure 1s na contração." },
+        { nome: "Face pull",                set: "4x15",    grupo: "Ombro post.",        obs: "Saúde do ombro." },
+        { nome: "Rosca direta",             set: "4x8-10",  grupo: "Bíceps",             obs: "Sem balanço, controle a negativa." },
+        { nome: "Rosca martelo",            set: "3x10-12", grupo: "Bíceps/antebraço",   obs: "Pegada neutra." },
+        { nome: "Panturrilha sentado",      set: "5x15-20", grupo: "Panturrilha (sóleo)", obs: "Reps altas, pausa embaixo." },
       ],
     },
     {
-      id: "C", dia: "Sexta", accent: "laranja",
-      titulo: "Treino C — Perna pesada / Dia do salto",
-      sub: "Fase 1 = aprender agacho. Pliometria pesada só na Fase 3.",
+      id: "C", accent: "laranja",
+      titulo: "Treino C — Perna",
+      sub: "Pernas: quadríceps, posterior e glúteo.",
       ex: [
-        ["Agachamento (livre ou guiado)", "3x8", "4x6-8", "5x5", "Quadríceps/glúteo", "REI do salto. Fase 1 carga leve só p/ aprender profundidade e postura."],
-        ["Leg press 45°", "3x10", "4x8-10", "4x8-10", "Quadríceps/glúteo", "Pés médios, amplitude controlada. Bom p/ ganhar confiança com carga."],
-        ["Levantamento terra romeno", "—", "3x8", "4x6-8", "Posterior/glúteo", "Entra na Fase 2. Cadeia posterior = explosão. Coluna neutra sempre."],
-        ["Cadeira flexora", "2x12", "3x10-12", "4x10-12", "Posterior", "Isolador, segure a contração."],
-        ["Elevação pélvica (hip thrust)", "3x10", "4x10", "4x8-10", "Glúteo", "Glúteo forte = mais altura no salto."],
-        ["Avanço / Afundo halteres", "—", "3x10 cada", "3x10 cada", "Glúteo/quadríceps", "Entra na Fase 2. Unilateral corrige assimetria de impulsão."],
-        ["Salto vertical máximo (medir)", "—", "4x3", "4x3", "Perna (potência)", "Entra na Fase 2. Meça a altura e registre o progresso."],
-        ["Agachamento com salto", "—", "—", "4x5", "Pliometria", "Só na Fase 3, corpo já preparado. Explosão máxima na subida."],
-        ["Panturrilha em pé (pesado)", "3x12", "4x10-12", "5x10-12", "Panturrilha", "Última flexão antes de deixar o chão = decola daqui."],
+        { nome: "Agachamento (livre ou guiado)",   set: "5x5",      grupo: "Quadríceps/glúteo", obs: "Profundidade e postura. Coluna neutra." },
+        { nome: "Leg press 45°",                   set: "4x8-10",   grupo: "Quadríceps/glúteo", obs: "Pés médios, amplitude controlada." },
+        { nome: "Levantamento terra romeno",       set: "4x6-8",    grupo: "Posterior/glúteo",  obs: "Cadeia posterior. Coluna neutra sempre." },
+        { nome: "Cadeira flexora",                 set: "4x10-12",  grupo: "Posterior",         obs: "Isolador, segure a contração." },
+        { nome: "Elevação pélvica (hip thrust)",   set: "4x8-10",   grupo: "Glúteo",            obs: "Aperte o glúteo no topo." },
+        { nome: "Avanço / Afundo halteres",        set: "3x10 cada", grupo: "Glúteo/quadríceps", obs: "Unilateral, corrige assimetria." },
+        { nome: "Panturrilha em pé (pesado)",      set: "5x10-12",  grupo: "Panturrilha",       obs: "Amplitude total, pausa no topo." },
       ],
     },
   ],
-
-  phases: [
-    { nome: "Fase 1 — Adaptação", semanas: "semanas 1-4", desc: "Poucos exercícios, aprender o movimento, não destruir o corpo. Sem pliometria pesada. Saia do treino sentindo que poderia fazer mais." },
-    { nome: "Fase 2 — Construção", semanas: "semanas 5-10", desc: "Adiciona 1-2 exercícios por treino, entra pliometria leve (box jump). Corpo já adaptado, dor bem menor." },
-    { nome: "Fase 3 — Completo", semanas: "semana 11+", desc: "Treino cheio, todos os exercícios, pliometria reativa. Volume alto e o corpo aguenta." },
-  ],
-
-  // Data de início do ciclo (string "YYYY-MM-DD", local) p/ calcular a fase atual
-  cicloInicio: "2026-06-01",
 };
