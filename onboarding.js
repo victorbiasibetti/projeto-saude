@@ -542,20 +542,22 @@ function fallbackCopy(txt, done){
   ta.remove();
 }
 
-// copia o prompt e abre o ChatGPT em nova aba (é só colar com Ctrl+V).
-// Abre PRIMEIRO, dentro do clique, pra não cair no bloqueador de pop-up.
+// copia o prompt PRIMEIRO, mostra confirmação e SÓ ENTÃO abre o ChatGPT.
+// window.open no mesmo gesto do clique → não cai no bloqueador de pop-up.
 function openInChatGPT(){
-  const btn = $("onbOpenGpt");
-  window.open("https://chatgpt.com/", "_blank", "noopener");
-  const done = ()=>{
-    const o = btn.textContent;
-    btn.textContent = "✓ Copiado — cole no ChatGPT (Ctrl+V)";
-    setTimeout(()=>{ btn.textContent = o; }, 2500);
-  };
   const txt = $("onbPrompt").value;
+  // 1) copia (dispara já; fallback síncrono cobre file:// / sem clipboard API)
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(txt).then(done, ()=>fallbackCopy(txt, done));
-  } else { fallbackCopy(txt, done); }
+    navigator.clipboard.writeText(txt).catch(()=>fallbackCopy(txt, ()=>{}));
+  } else {
+    fallbackCopy(txt, ()=>{});
+  }
+  // 2) mostra a confirmação
+  const msg = $("onbGptMsg");
+  msg.textContent = "✓ Prompt copiado com sucesso! Cole no ChatGPT com Ctrl+V.";
+  msg.className = "onb-import-msg ok";
+  // 3) abre o ChatGPT em nova aba
+  window.open("https://chatgpt.com/", "_blank", "noopener");
 }
 
 (function initOnboarding(){
