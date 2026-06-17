@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:1200px; height:630px; }
+  body{
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(198,255,58,.12), transparent 60%),
+      radial-gradient(700px 500px at 0% 110%, rgba(255,122,47,.10), transparent 55%),
+      #0E1116;
+    color:#ECF0F6; font-family:"Oswald",sans-serif;
+    display:flex; flex-direction:column; justify-content:center;
+    padding:84px; position:relative;
+  }
+  .mark{ color:#C6FF3A; font-size:60px; line-height:1; filter:drop-shadow(0 0 18px rgba(198,255,58,.5)); }
+  h1{
+    font-weight:700; font-size:118px; line-height:.98; text-transform:uppercase;
+    letter-spacing:.01em; margin:18px 0 10px;
+  }
+  h1 .hl{ color:#C6FF3A; }
+  p{ font-family:"JetBrains Mono",monospace; font-size:30px; color:#93A0B4; letter-spacing:.02em; }
+  .pill{
+    position:absolute; top:84px; right:84px;
+    font-family:"JetBrains Mono",monospace; font-weight:700; font-size:24px;
+    color:#C6FF3A; border:2px solid rgba(198,255,58,.4); background:rgba(198,255,58,.08);
+    border-radius:999px; padding:12px 26px; text-transform:uppercase;
+  }
+  .bar{ position:absolute; left:0; bottom:0; width:100%; height:10px;
+        background:linear-gradient(90deg,#C6FF3A,#46D17F,#4DA3FF,#FF7A2F); }
+</style>
+</head>
+<body>
+  <div class="pill">projetosaude.life</div>
+  <span class="mark">▲</span>
+  <h1>Projeto <span class="hl">Saúde</span></h1>
+  <p>Dieta &amp; Treino · acompanhe e bata suas metas</p>
+  <div class="bar"></div>
+</body>
+</html>
