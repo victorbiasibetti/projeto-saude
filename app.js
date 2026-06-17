@@ -218,14 +218,14 @@ function renderDay(){
   document.getElementById("ringFg").style.strokeDashoffset = circ*(1-got/total);
   document.getElementById("dayPct").textContent = pct+"%";
 
-  // kcal já ingeridas hoje = soma das kcal das refeições marcadas
+  // anel de kcal ingeridas = soma das kcal das refeições marcadas
   const kcalGot = MEALS.filter(m=>rec[m.key]).reduce((s,m)=> s + mealKcal(m.kcal), 0);
+  // denominador do anel: meta do perfil, senão o total de kcal do cardápio do dia
+  const kcalTotal = MEALS.reduce((s,m)=> s + mealKcal(m.kcal), 0);
+  const denom = (user && user.targetKcal) ? user.targetKcal : (kcalTotal || 1);
+  const frac = Math.min(1, kcalGot/denom);
+  document.getElementById("kcalRingFg").style.strokeDashoffset = circ*(1-frac);
   document.getElementById("dayKcal").textContent = kcalGot.toLocaleString("pt-BR");
-  // se há meta no perfil, mostra "/ meta"
-  const sub = document.getElementById("dayKcalSub");
-  if(sub) sub.textContent = (user && user.targetKcal)
-    ? "de " + user.targetKcal.toLocaleString("pt-BR") + " kcal"
-    : "kcal ingeridas";
 }
 
 // extrai o número de kcal de uma string tipo "~1.080 kcal" → 1080 (0 se não houver)

@@ -50,9 +50,15 @@
             <span>do dia</span>
           </div>
         </div>
-        <div class="day-kcal">
-          <strong id="dayKcal">0</strong>
-          <span id="dayKcalSub">kcal ingeridas</span>
+        <div class="dunk-meter kcal-meter">
+          <svg viewBox="0 0 120 120" class="ring">
+            <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+            <circle class="ring-fg" cx="60" cy="60" r="52" id="kcalRingFg"></circle>
+          </svg>
+          <div class="dunk-meter-label">
+            <strong id="dayKcal">0</strong>
+            <span id="dayKcalSub">kcal</span>
+          </div>
         </div>
       </div>
     </div>

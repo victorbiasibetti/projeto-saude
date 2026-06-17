@@ -129,15 +129,8 @@ main{ padding:clamp(18px,3vw,32px) var(--gutter) 40px; max-width:var(--content-m
 /* quando editando outro dia, o eyebrow vira laranja pra avisar */
 #heroEyebrow{ transition:color .15s; }
 
-/* anel + kcal lado a lado */
-.day-hero-stats{ display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap; flex:0 0 auto; }
-.day-kcal{
-  display:flex; flex-direction:column; align-items:center; gap:2px;
-  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm);
-  border-top:3px solid var(--lime); padding:14px 18px; min-width:96px;
-}
-.day-kcal strong{ font-family:var(--display); font-size:30px; line-height:1; color:var(--lime); }
-.day-kcal span{ font-family:var(--mono); font-size:10px; color:var(--txt-dim); text-transform:uppercase; letter-spacing:.06em; text-align:center; }
+/* anéis lado a lado (% do dia + kcal) */
+.day-hero-stats{ display:flex; align-items:center; justify-content:center; gap:18px; flex-wrap:wrap; flex:0 0 auto; }
 
 /* anel de progresso do dia (dunk meter) */
 .dunk-meter{ position:relative; width:120px; height:120px; flex:0 0 auto; }
@@ -155,6 +148,10 @@ main{ padding:clamp(18px,3vw,32px) var(--gutter) 40px; max-width:var(--content-m
 }
 .dunk-meter-label strong{ font-family:var(--display); font-size:30px; line-height:1; }
 .dunk-meter-label span{ font-size:11px; color:var(--txt-dim); text-transform:uppercase; letter-spacing:.1em; }
+
+/* 2º anel: kcal ingeridas — mesmo estilo, cor laranja */
+.kcal-meter .ring-fg{ stroke:var(--orange); filter:drop-shadow(0 0 6px rgba(255,122,47,.5)); }
+.kcal-meter .dunk-meter-label strong{ color:var(--orange); font-size:23px; }
 
 /* ---------- CHECKS DE HOJE ---------- */
 .checks{
