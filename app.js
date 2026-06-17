@@ -393,7 +393,8 @@ function renderLegend(){
 /* ===========================================================
    TREINO
    =========================================================== */
-let weekSelDow = null; // dia selecionado no modo toque (pra remanejar treino)
+let weekSelDow = null;   // dia selecionado no modo toque (pra remanejar treino)
+let weekLastDrop = 0;    // timestamp do último drop (ignora o "click fantasma" pós-drag)
 
 function renderWeek(){
   const grid = document.getElementById("weekGrid");
@@ -419,19 +420,27 @@ function renderWeek(){
     // drag-and-drop (desktop)
     if(isTreino){
       el.addEventListener("dragstart", e=>{
+        weekSelDow = null;   // some com qualquer seleção de toque ao começar a arrastar
         e.dataTransfer.setData("text/plain", String(dow));
         e.dataTransfer.effectAllowed = "move";
       });
     }
     el.addEventListener("dragover", e=>{ e.preventDefault(); el.classList.add("drop-hover"); });
-    el.addEventListener("dragleave", ()=> el.classList.remove("drop-hover"));
+    el.addEventListener("dragleave", e=>{
+      if(!el.contains(e.relatedTarget)) el.classList.remove("drop-hover"); // ignora entrar nos filhos
+    });
     el.addEventListener("drop", e=>{
       e.preventDefault(); el.classList.remove("drop-hover");
+      weekLastDrop = (typeof performance!=="undefined" ? performance.now() : Date.now());
       const src = parseInt(e.dataTransfer.getData("text/plain"));
       if(!isNaN(src)) weekReassign(src, dow);
     });
-    // toque/clique (funciona em mobile e desktop)
-    el.addEventListener("click", ()=> weekTap(dow));
+    // toque/clique (funciona em mobile e desktop) — ignora o click fantasma logo após um drop
+    el.addEventListener("click", ()=>{
+      const now = (typeof performance!=="undefined" ? performance.now() : Date.now());
+      if(now - weekLastDrop < 350) return;
+      weekTap(dow);
+    });
 
     grid.appendChild(el);
   });
