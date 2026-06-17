@@ -32,19 +32,24 @@ dependências externas além das fontes do Google Fonts via CDN.
 
 ```
 saude/
-  index.html   — estrutura + as duas tabs (Dieta / Treino). Liga style.css, data.js, app.js.
+  index.html   — estrutura + as duas tabs + overlay de onboarding. Liga style.css e os 3 JS.
   style.css    — tema "performance dashboard" escuro. Todas as cores em CSS vars no :root.
   data.js      — TEMPLATE padrão do plano (DEFAULT_PLAN): refeições, cardápio, divisão
                  semanal, treinos, fases, cicloInicio. NÃO é mais a fonte de verdade em
                  runtime — é só o seed copiado pro localStorage na 1ª carga.
   app.js       — toda a lógica (render, localStorage, seleção de dia, tabs, fases) + carga
-                 do plano do localStorage (loadPlan/seedPlan/savePlan/restorePlan).
+                 do plano e do perfil (loadPlan/seedPlan/savePlan/restorePlan, loadUser/
+                 saveUser/applyUser/refreshAll).
+  onboarding.js— fluxo do novo usuário (4 steps), cálculo BMR/TDEE, geração de prompt p/ IA,
+                 import do cardápio, export/import geral. Carregado por ÚLTIMO (usa globals
+                 de app.js). Dispara sozinho no fim do arquivo se não há perfil salvo.
   CONTEXT.md   — este arquivo.
 ```
 
-A ordem de carga importa: `data.js` ANTES de `app.js` (app depende das constantes de data).
-Ambos são `<script>` clássicos (não modules) → compartilham escopo global, então as `const`
-de `data.js` ficam visíveis em `app.js`.
+A ordem de carga importa: `data.js` → `app.js` → `onboarding.js`. Os 3 são `<script>`
+clássicos (não modules) → compartilham escopo global. `data.js` define `DEFAULT_PLAN`;
+`app.js` consome e expõe `plan/user/state` + render funcs; `onboarding.js` (último) usa
+esses globals e dispara o fluxo se `user` for null.
 
 ## Design (direção visual escolhida)
 
@@ -63,7 +68,16 @@ Tema escuro estilo painel de performance atlética. NÃO é o template cream/ser
 
 ## Modelo de dados (localStorage)
 
-São DUAS chaves separadas:
+São TRÊS chaves separadas:
+
+- **`projeto_enterrada_user_v1`** — o PERFIL da pessoa (preenchido no onboarding).
+  `{ name, project, height, weight, age, sex, activity, goal, bmr, tdee, targetKcal, macros, onboardedAt }`.
+  Se essa chave está vazia (`user == null`), `onboarding.js` abre o overlay de configuração.
+  `applyUser()` personaliza o cabeçalho (projeto vira título; nome+medidas+kcal no subtítulo)
+  e a tag de kcal do cardápio. BMR = Mifflin-St Jeor; TDEE = BMR × fator de atividade;
+  `targetKcal = TDEE` (sem ajuste — o objetivo só orienta a IA). "Pular tudo" grava um perfil
+  mínimo `{skipped:true}` só pra não re-disparar.
+
 
 - **`projeto_enterrada_plan_v1`** — o CONTEÚDO de dieta+treino (o "plano"). Semeado a partir
   de `DEFAULT_PLAN` (data.js) na 1ª carga via `seedPlan()`, depois lido de lá. Estrutura =
@@ -92,6 +106,17 @@ São DUAS chaves separadas:
 - Cerveja é registrada em LITROS (número), separada em `state.beer`, somada no rodapé do mês.
 
 ## Funcionalidades implementadas
+
+### Onboarding & Backup (onboarding.js)
+1. **Fluxo de 4 steps** (overlay modal) que abre na 1ª visita (sem perfil): (1) nome + projeto
+   com chips de sugestão; (2) altura/peso/idade/sexo; (3) BMR + TDEE + objetivo → meta de kcal;
+   (4) gera um prompt parametrizado p/ colar numa IA e importa o JSON do cardápio que ela devolve.
+2. **Import do cardápio:** o JSON `{ targetKcal, macros, menu[] }` vira `plan.menu`. Os checks
+   diários (`plan.meals`) são DERIVADOS do menu (`deriveMeals`): cada refeição vira um check
+   (key = slug do título) + um check fixo "Treino" no fim (a aba Treino e o "dia 100%" dependem
+   dele). Parser tolerante (tira cercas ```json```, recorta de `{` a `}`, sanitiza `accent`).
+3. **Export/Import geral** (botões no rodapé): exporta `{user, plan, state}` num `.json` p/
+   migrar entre navegadores; importar grava as 3 chaves e recarrega a página.
 
 ### Tab Dieta
 1. **Painel do dia (topo):** mostra o dia SELECIONADO (padrão = hoje). Tem o anel de progresso,
@@ -160,8 +185,6 @@ plano cresce gradualmente. NÃO voltar pro volume cheio de cara.
 - **Aba/seção de Progressão:** registrar peso corporal e altura do salto vertical por semana
   (existia na planilha Excel original, ainda não foi portada pro app). Bom candidato pro próximo passo.
 - Permitir editar o `CICLO_INICIO` pela própria interface.
-- Exportar/importar os dados do localStorage (backup em JSON) — útil já que os dados ficam presos
-  a um navegador só.
 - Marcar visualmente no calendário os dias de treino (A/B/C) esperados vs. cumpridos.
 - PWA / instalável, pra abrir como app no celular.
 

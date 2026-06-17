@@ -5,6 +5,7 @@
 
 const STORE_KEY = "projeto_enterrada_v1";       // dados do usuário (checks/cerveja)
 const PLAN_KEY  = "projeto_enterrada_plan_v1";  // conteúdo dieta+treino (editável por pessoa)
+const USER_KEY  = "projeto_enterrada_user_v1";  // perfil (nome, projeto, medidas, BMR/TDEE)
 const WD = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const MES_NOME = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
                   "Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -59,6 +60,48 @@ function syncPlanRefs(){
 function restorePlan(){
   plan = seedPlan();
   syncPlanRefs();
+}
+
+/* ---------- PERFIL do usuário (nome, projeto, medidas) ----------
+   null = ninguém configurou ainda → onboarding.js dispara o fluxo. */
+let user = loadUser();
+
+function loadUser(){
+  try{
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function saveUser(){
+  try{ localStorage.setItem(USER_KEY, JSON.stringify(user)); }
+  catch(e){ /* modo restrito: segue em memória */ }
+}
+// personaliza o cabeçalho (e a meta de kcal) com os dados do perfil
+function applyUser(){
+  if(!user) return;
+  const h1 = document.querySelector(".brand-text h1");
+  const p  = document.querySelector(".brand-text p");
+  if(h1 && user.project) h1.textContent = user.project;
+  if(p){
+    const bits = [];
+    if(user.name) bits.push(user.name);
+    if(user.height) bits.push(user.height + " cm");
+    if(user.weight) bits.push(user.weight + " kg");
+    if(user.tdee) bits.push("~" + user.tdee + " kcal/dia");
+    p.textContent = bits.join(" · ");
+  }
+  const tag = document.getElementById("dietKcalTag");
+  if(tag && user.targetKcal){
+    tag.textContent = "meta ~" + user.targetKcal + " kcal/dia"
+                    + (user.macros ? " · " + user.macros : "");
+  }
+}
+// re-render de tudo que depende de plano/estado (após import/onboarding)
+function refreshAll(){
+  syncPlanRefs();
+  applyUser();
+  renderDay(); renderMenu(); renderMonth(); renderLegend();
+  renderPhaseBanner(); renderWeek(); renderWorkouts();
 }
 
 /* ---------- estado do usuário (checks/cerveja) ---------- */
@@ -426,6 +469,7 @@ document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
   viewYear = now.getFullYear();
   viewMonth = now.getMonth();
 
+  applyUser();
   renderDay();
   renderMenu();
   renderMonth();
