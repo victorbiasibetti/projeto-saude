@@ -5,6 +5,7 @@
 
 const STORE_KEY = "projeto_enterrada_v1";       // dados do usuário (checks/cerveja)
 const PLAN_KEY  = "projeto_enterrada_plan_v1";  // conteúdo dieta+treino (editável por pessoa)
+const USER_KEY  = "projeto_enterrada_user_v1";  // perfil (nome, projeto, medidas, BMR/TDEE)
 const WD = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const MES_NOME = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
                   "Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -61,6 +62,48 @@ function restorePlan(){
   syncPlanRefs();
 }
 
+/* ---------- PERFIL do usuário (nome, projeto, medidas) ----------
+   null = ninguém configurou ainda → onboarding.js dispara o fluxo. */
+let user = loadUser();
+
+function loadUser(){
+  try{
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function saveUser(){
+  try{ localStorage.setItem(USER_KEY, JSON.stringify(user)); }
+  catch(e){ /* modo restrito: segue em memória */ }
+}
+// personaliza o cabeçalho (e a meta de kcal) com os dados do perfil
+function applyUser(){
+  if(!user) return;
+  const h1 = document.querySelector(".brand-text h1");
+  const p  = document.querySelector(".brand-text p");
+  if(h1 && user.project) h1.textContent = user.project;
+  if(p){
+    const bits = [];
+    if(user.name) bits.push(user.name);
+    if(user.height) bits.push(user.height + " cm");
+    if(user.weight) bits.push(user.weight + " kg");
+    if(user.tdee) bits.push("~" + user.tdee + " kcal/dia");
+    p.textContent = bits.join(" · ");
+  }
+  const tag = document.getElementById("dietKcalTag");
+  if(tag && user.targetKcal){
+    tag.textContent = "meta ~" + user.targetKcal + " kcal/dia"
+                    + (user.macros ? " · " + user.macros : "");
+  }
+}
+// re-render de tudo que depende de plano/estado (após import/onboarding)
+function refreshAll(){
+  syncPlanRefs();
+  applyUser();
+  renderDay(); renderMenu(); renderMonth(); renderLegend();
+  renderPhaseBanner(); renderWeek(); renderWorkouts();
+}
+
 /* ---------- estado do usuário (checks/cerveja) ---------- */
 let state = load();
 let viewYear, viewMonth;       // mês exibido na tabela
@@ -70,10 +113,18 @@ let selectedKey = todayKey();  // dia sendo editado no painel do topo (padrão: 
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
-    return raw ? JSON.parse(raw) : { days:{}, beer:{} };
+    return normalizeState(raw ? JSON.parse(raw) : null);
   }catch(e){
     return { days:{}, beer:{} };
   }
+}
+// garante a forma { days:{}, beer:{} } mesmo se vier JSON válido com shape errado
+// (ex.: arquivo importado/editado à mão) — senão o render quebra em state.days[...]
+function normalizeState(s){
+  if(!s || typeof s !== "object") return { days:{}, beer:{} };
+  if(!s.days || typeof s.days !== "object") s.days = {};
+  if(!s.beer || typeof s.beer !== "object") s.beer = {};
+  return s;
 }
 function save(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
@@ -174,6 +225,25 @@ function renderDay(){
   const circ = 2*Math.PI*52;
   document.getElementById("ringFg").style.strokeDashoffset = circ*(1-got/total);
   document.getElementById("dayPct").textContent = pct+"%";
+
+  // anel de kcal ingeridas = soma das kcal das refeições marcadas
+  const kcalGot = MEALS.filter(m=>rec[m.key]).reduce((s,m)=> s + mealKcal(m.kcal), 0);
+  // denominador do anel: meta do perfil, senão o total de kcal do cardápio do dia
+  const kcalTotal = MEALS.reduce((s,m)=> s + mealKcal(m.kcal), 0);
+  const denom = (user && user.targetKcal) ? user.targetKcal : (kcalTotal || 1);
+  const frac = Math.min(1, kcalGot/denom);
+  document.getElementById("kcalRingFg").style.strokeDashoffset = circ*(1-frac);
+  document.getElementById("dayKcal").textContent = kcalGot.toLocaleString("pt-BR");
+  // total de referência logo abaixo (meta ou total do cardápio do dia)
+  document.getElementById("dayKcalSub").textContent = "/ " + denom.toLocaleString("pt-BR");
+}
+
+// extrai o número de kcal de uma string tipo "~1.080 kcal" ou "1,080 kcal" → 1080.
+// Aceita ponto OU vírgula como separador de milhar (a IA pode usar qualquer um). 0 se não houver.
+function mealKcal(k){
+  if(!k) return 0;
+  const m = String(k).match(/[\d.,]+/);
+  return m ? (parseInt(m[0].replace(/[.,]/g,""), 10) || 0) : 0;
 }
 
 // selecionar um dia (clicando na tabela) e trazer pro topo
@@ -426,6 +496,7 @@ document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
   viewYear = now.getFullYear();
   viewMonth = now.getMonth();
 
+  applyUser();
   renderDay();
   renderMenu();
   renderMonth();
