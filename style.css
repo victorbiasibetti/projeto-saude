@@ -330,6 +330,12 @@ tr.totals td{ border-top:2px solid var(--line); font-family:var(--mono); font-we
 .wd.tag-off .wd-tag{ color:var(--txt-faint); font-size:14px; font-family:var(--body); font-weight:600; padding-top:6px; }
 .wd.today{ border-color:var(--lime); box-shadow:0 0 0 1px var(--lime), 0 0 20px rgba(198,255,58,.18); }
 .wd.today .wd-day{ color:var(--lime); }
+/* remanejar treino: arrastar (desktop) ou tocar (mobile) */
+.wd{ cursor:pointer; user-select:none; }
+.wd[draggable="true"]{ cursor:grab; }
+.wd[draggable="true"]:active{ cursor:grabbing; }
+.wd.sel{ outline:2px solid var(--lime); outline-offset:-2px; background:rgba(198,255,58,.06); }
+.wd.drop-hover{ border-color:var(--lime); border-style:dashed; background:rgba(198,255,58,.08); }
 
 .workouts{ display:grid; gap:16px; }
 .workout{

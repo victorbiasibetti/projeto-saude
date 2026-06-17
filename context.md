@@ -158,7 +158,9 @@ São TRÊS chaves separadas:
 
 ### Tab Treino (sem fases — v2)
 1. **Divisão semanal:** grid Seg→Dom a partir de `WEEK`. Cada dia = tag (id de treino) ou
-   descanso. Hoje destacado. Cores tag-A..F.
+   descanso. Hoje destacado. Cores tag-A..F. **Remanejável:** arraste um treino pra outro dia
+   (desktop) ou toque o treino + toque o destino (mobile). Regra: destino vazio = move, ocupado
+   = troca (`weekReassign`). Persiste em `plan.week` via `savePlan()` e re-renderiza.
 2. **Seus treinos:** cards de `WORKOUTS` (`renderWorkouts`), cada um com exercícios
    `{nome, set, grupo, obs}`. `set` = séries×reps único. Sem seletor de fase/banner.
 3. **Dinâmico:** o onboarding gera os treinos pela IA (N = dias/semana) e importa junto com a

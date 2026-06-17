@@ -393,6 +393,8 @@ function renderLegend(){
 /* ===========================================================
    TREINO
    =========================================================== */
+let weekSelDow = null; // dia selecionado no modo toque (pra remanejar treino)
+
 function renderWeek(){
   const grid = document.getElementById("weekGrid");
   const todayDow = new Date().getDay();
@@ -403,15 +405,71 @@ function renderWeek(){
     const w = WEEK.find(x=>x.dow===dow);
     if(!w) return;
     const isToday = dow===todayDow;
+    const isTreino = w.tag!=="off";
     const el = document.createElement("div");
-    el.className = `wd tag-${w.tag} ${isToday?'today':''}`;
+    el.className = `wd tag-${w.tag} ${isToday?'today':''} ${weekSelDow===dow?'sel':''}`;
+    el.dataset.dow = dow;
+    if(isTreino) el.setAttribute("draggable", "true");
     const tagTxt = w.tag==="off" ? "Descanso" : w.tag;
     el.innerHTML =
       `<span class="wd-day">${w.dia.slice(0,3)}</span>
        <span class="wd-tag">${tagTxt}</span>
        <span class="wd-name">${w.tag==="off" ? "" : (w.nome || "")}</span>`;
+
+    // drag-and-drop (desktop)
+    if(isTreino){
+      el.addEventListener("dragstart", e=>{
+        e.dataTransfer.setData("text/plain", String(dow));
+        e.dataTransfer.effectAllowed = "move";
+      });
+    }
+    el.addEventListener("dragover", e=>{ e.preventDefault(); el.classList.add("drop-hover"); });
+    el.addEventListener("dragleave", ()=> el.classList.remove("drop-hover"));
+    el.addEventListener("drop", e=>{
+      e.preventDefault(); el.classList.remove("drop-hover");
+      const src = parseInt(e.dataTransfer.getData("text/plain"));
+      if(!isNaN(src)) weekReassign(src, dow);
+    });
+    // toque/clique (funciona em mobile e desktop)
+    el.addEventListener("click", ()=> weekTap(dow));
+
     grid.appendChild(el);
   });
+}
+
+// modo toque: 1º toque seleciona o treino, 2º toque no destino move/troca
+function weekTap(dow){
+  const w = WEEK.find(x=>x.dow===dow);
+  if(!w) return;
+  if(weekSelDow === null){
+    if(w.tag === "off") return;   // nada pra mover num dia de descanso
+    weekSelDow = dow;
+    renderWeek();
+  } else if(weekSelDow === dow){
+    weekSelDow = null;            // toca de novo = desmarca
+    renderWeek();
+  } else {
+    weekReassign(weekSelDow, dow); // weekReassign limpa a seleção e re-renderiza
+  }
+}
+
+// remaneja: destino vazio = move; destino ocupado = troca. Persiste.
+function weekReassign(src, dst){
+  weekSelDow = null;
+  if(src === dst){ renderWeek(); return; }
+  const a = WEEK.find(x=>x.dow===src), b = WEEK.find(x=>x.dow===dst);
+  if(!a || !b || a.tag === "off"){ renderWeek(); return; }
+  if(b.tag === "off"){
+    b.tag = a.tag; b.nome = a.nome;
+    a.tag = "off"; a.nome = "";
+  } else {
+    const t = a.tag, n = a.nome;
+    a.tag = b.tag; a.nome = b.nome;
+    b.tag = t;     b.nome = n;
+  }
+  savePlan();
+  renderWeek();
+  renderDay();   // o treino de HOJE pode ter mudado → atualiza o subtítulo
 }
 
 function renderWorkouts(){
