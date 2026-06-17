@@ -152,6 +152,7 @@ main{ padding:clamp(18px,3vw,32px) var(--gutter) 40px; max-width:var(--content-m
 /* 2º anel: kcal ingeridas — mesmo estilo, cor laranja */
 .kcal-meter .ring-fg{ stroke:var(--orange); filter:drop-shadow(0 0 6px rgba(255,122,47,.5)); }
 .kcal-meter .dunk-meter-label strong{ color:var(--orange); font-size:23px; }
+.kcal-meter .dunk-meter-label span{ font-family:var(--mono); color:var(--orange); opacity:.7; letter-spacing:.02em; margin-top:2px; }
 
 /* ---------- CHECKS DE HOJE ---------- */
 .checks{

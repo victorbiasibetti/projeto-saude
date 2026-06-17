@@ -226,6 +226,8 @@ function renderDay(){
   const frac = Math.min(1, kcalGot/denom);
   document.getElementById("kcalRingFg").style.strokeDashoffset = circ*(1-frac);
   document.getElementById("dayKcal").textContent = kcalGot.toLocaleString("pt-BR");
+  // total de referência logo abaixo (meta ou total do cardápio do dia)
+  document.getElementById("dayKcalSub").textContent = "/ " + denom.toLocaleString("pt-BR");
 }
 
 // extrai o número de kcal de uma string tipo "~1.080 kcal" → 1080 (0 se não houver)
