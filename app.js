@@ -113,10 +113,18 @@ let selectedKey = todayKey();  // dia sendo editado no painel do topo (padrão: 
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
-    return raw ? JSON.parse(raw) : { days:{}, beer:{} };
+    return normalizeState(raw ? JSON.parse(raw) : null);
   }catch(e){
     return { days:{}, beer:{} };
   }
+}
+// garante a forma { days:{}, beer:{} } mesmo se vier JSON válido com shape errado
+// (ex.: arquivo importado/editado à mão) — senão o render quebra em state.days[...]
+function normalizeState(s){
+  if(!s || typeof s !== "object") return { days:{}, beer:{} };
+  if(!s.days || typeof s.days !== "object") s.days = {};
+  if(!s.beer || typeof s.beer !== "object") s.beer = {};
+  return s;
 }
 function save(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
@@ -230,11 +238,12 @@ function renderDay(){
   document.getElementById("dayKcalSub").textContent = "/ " + denom.toLocaleString("pt-BR");
 }
 
-// extrai o número de kcal de uma string tipo "~1.080 kcal" → 1080 (0 se não houver)
+// extrai o número de kcal de uma string tipo "~1.080 kcal" ou "1,080 kcal" → 1080.
+// Aceita ponto OU vírgula como separador de milhar (a IA pode usar qualquer um). 0 se não houver.
 function mealKcal(k){
   if(!k) return 0;
-  const m = String(k).match(/[\d.]+/);
-  return m ? (parseInt(m[0].replace(/\./g,""), 10) || 0) : 0;
+  const m = String(k).match(/[\d.,]+/);
+  return m ? (parseInt(m[0].replace(/[.,]/g,""), 10) || 0) : 0;
 }
 
 // selecionar um dia (clicando na tabela) e trazer pro topo

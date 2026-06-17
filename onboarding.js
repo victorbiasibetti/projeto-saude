@@ -235,11 +235,25 @@ function doImportMenu(){
     try{ raw = parseLooseJSON($("onbImport").value); }
     catch(_){ throw new Error("Não entendi a resposta. Cole o texto completo que o Chat-GPT gerou."); }
     const parsed = sanitizeImport(raw);
+    const newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
+
+    // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
+    // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Avisa antes.
+    const hadHistory = state && state.days && Object.keys(state.days).length > 0;
+    const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
+    if(hadHistory && keysChange &&
+       !confirm("Você já tem dias marcados. Trocar o cardápio muda as refeições — os dias antigos vão aparecer como não cumpridos (os dados não são apagados). Continuar?")){
+      msg.textContent = "Import cancelado.";
+      msg.className = "onb-import-msg";
+      return;
+    }
+
     plan.menu = parsed.menu;
-    plan.meals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
+    plan.meals = newMeals;
     savePlan();
     if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
     if(parsed.macros) ONB.draft.macros = parsed.macros;
+    refreshAll(); // re-aponta MEALS/MENU e re-renderiza (mesmo se o usuário fizer "Responder depois")
     msg.textContent = `✓ ${parsed.menu.length} refeições importadas`;
     msg.className = "onb-import-msg ok";
   }catch(e){
