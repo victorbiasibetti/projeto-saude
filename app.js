@@ -217,6 +217,22 @@ function renderDay(){
   const circ = 2*Math.PI*52;
   document.getElementById("ringFg").style.strokeDashoffset = circ*(1-got/total);
   document.getElementById("dayPct").textContent = pct+"%";
+
+  // kcal já ingeridas hoje = soma das kcal das refeições marcadas
+  const kcalGot = MEALS.filter(m=>rec[m.key]).reduce((s,m)=> s + mealKcal(m.kcal), 0);
+  document.getElementById("dayKcal").textContent = kcalGot.toLocaleString("pt-BR");
+  // se há meta no perfil, mostra "/ meta"
+  const sub = document.getElementById("dayKcalSub");
+  if(sub) sub.textContent = (user && user.targetKcal)
+    ? "de " + user.targetKcal.toLocaleString("pt-BR") + " kcal"
+    : "kcal ingeridas";
+}
+
+// extrai o número de kcal de uma string tipo "~1.080 kcal" → 1080 (0 se não houver)
+function mealKcal(k){
+  if(!k) return 0;
+  const m = String(k).match(/[\d.]+/);
+  return m ? (parseInt(m[0].replace(/\./g,""), 10) || 0) : 0;
 }
 
 // selecionar um dia (clicando na tabela) e trazer pro topo
