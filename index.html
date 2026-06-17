@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Google tag (gtag.js) — Measurement ID público; ver .env.sample -->
+<script>
+  // só carrega em produção pra não contar acessos de dev (localhost/file://)
+  if (location.hostname.endsWith("projetosaude.life") || location.hostname.endsWith("github.io")) {
+    var gaScript = document.createElement("script");
+    gaScript.async = true;
+    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=G-BKR1CT2JB6";
+    document.head.appendChild(gaScript);
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-BKR1CT2JB6');
+  }
+</script>
+
 <title>Projeto Enterrada — Dieta & Treino</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,7 +40,7 @@
 </header>
 
 <div class="privacy-bar">
-  🔒 Seus dados <strong>não são compartilhados com ninguém</strong> — ficam salvos só no seu navegador.
+  🔒 Seus dados <strong>de saúde não são compartilhados com ninguém</strong> — ficam salvos só no seu navegador.
 </div>
 
 <nav class="tabs" role="tablist">

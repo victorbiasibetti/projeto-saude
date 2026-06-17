@@ -24,9 +24,20 @@ dependências externas além das fontes do Google Fonts via CDN.
 - **Sem localStorage? Não.** O app DEPENDE de `localStorage` pra persistir — funciona porque
   roda em `file://` local. (No sandbox da web do Claude isso era limitado, mas no PC do Victor
   funciona normal.)
-- **Sem backend / sem rede** (exceto Google Fonts). Todos os dados ficam no navegador do usuário.
+- **Sem backend / sem rede** (exceto Google Fonts e Google Analytics). Todos os dados de saúde
+  ficam no navegador do usuário.
 - Idioma da interface e dos comentários: **português do Brasil**.
 - Funciona offline depois de carregado (só as fontes precisam de rede; degrada bem sem elas).
+
+### Google Analytics (GA4)
+- Snippet `gtag.js` **inline** no `<head>` do `index.html`, Measurement ID `G-BKR1CT2JB6`.
+  ID é **público por design** (site estático, sem build → não dá pra esconder). Sem CI/Secret.
+- **Guard de host:** o snippet só carrega se `location.hostname` terminar em `projetosaude.life`
+  ou `github.io` → acessos locais (`file://`/localhost) NÃO contam no GA.
+- Coleta só métricas de **uso/navegação** (não os dados de saúde, que seguem só no localStorage).
+  Por isso a barra de privacidade diz "dados **de saúde** não são compartilhados".
+- `.env.sample` documenta `GA_MEASUREMENT_ID` pra quem forkar usar o próprio GA (o site não lê
+  `.env`; é só referência — trocar o ID direto no `index.html`). `.env` está no `.gitignore`.
 
 ## Estrutura de arquivos
 
