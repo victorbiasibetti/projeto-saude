@@ -206,10 +206,10 @@ function parseLooseJSON(text){
 // devolve {menu, targetKcal, macros} sanitizado ou lança erro
 function sanitizeImport(obj){
   if(!obj || !Array.isArray(obj.menu) || obj.menu.length === 0)
-    throw new Error('JSON sem a lista "menu".');
+    throw new Error("Resposta sem refeições. Confira se copiou tudo.");
   const menu = obj.menu.map((c, i)=>{
     if(!c || typeof c.title !== "string" || !Array.isArray(c.items))
-      throw new Error("Refeição inválida no menu (precisa de title e items).");
+      throw new Error("Uma refeição veio incompleta (faltou nome ou itens).");
     return {
       title: String(c.title).slice(0,60),
       icon: typeof c.icon === "string" && c.icon ? c.icon : "🍽️",
@@ -228,7 +228,10 @@ function sanitizeImport(obj){
 function doImportMenu(){
   const msg = $("onbImportMsg");
   try{
-    const parsed = sanitizeImport(parseLooseJSON($("onbImport").value));
+    let raw;
+    try{ raw = parseLooseJSON($("onbImport").value); }
+    catch(_){ throw new Error("Não entendi a resposta. Cole o texto completo que o Chat-GPT gerou."); }
+    const parsed = sanitizeImport(raw);
     plan.menu = parsed.menu;
     plan.meals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
     savePlan();
@@ -358,6 +361,7 @@ function wireOnboarding(){
 
   // step 4
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
+  $("onbPasteBtn").addEventListener("click", pasteResponse);
   $("onbImportBtn").addEventListener("click", doImportMenu);
 
   // export / import geral (footer)
@@ -367,6 +371,20 @@ function wireOnboarding(){
     if(e.target.files && e.target.files[0]) importAll(e.target.files[0]);
     e.target.value = "";
   });
+}
+
+// cola o conteúdo da área de transferência no campo de resposta
+function pasteResponse(){
+  const ta = $("onbImport");
+  if(navigator.clipboard && navigator.clipboard.readText){
+    navigator.clipboard.readText().then(
+      t=>{ ta.value = t; ta.focus(); },
+      ()=>{ ta.focus(); alert("Não consegui ler a área de transferência. Cole manualmente com Ctrl+V."); }
+    );
+  } else {
+    ta.focus();
+    alert("Cole manualmente com Ctrl+V (Cmd+V no Mac).");
+  }
 }
 
 function copyText(txt, btn){

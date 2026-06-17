@@ -199,20 +199,22 @@
 
     <!-- STEP 4 — prompt p/ IA + import -->
     <section class="onb-step" data-step="4" hidden>
-      <p class="onb-note">
-        <strong>1.</strong> Copie o prompt abaixo e cole no ChatGPT (ou outra IA).
-        <strong>2.</strong> A IA devolve um JSON. <strong>3.</strong> Cole o JSON aqui embaixo e importe.
-      </p>
+      <ol class="onb-steps-list">
+        <li>Copie o prompt abaixo e cole no Chat-GPT (ou outra IA).</li>
+        <li>O Chat-GPT vai te devolver uma resposta.</li>
+        <li>Cole essa resposta aqui embaixo e clique em Importar cardápio.</li>
+      </ol>
 
-      <div class="onb-prompt-wrap">
-        <textarea id="onbPrompt" class="onb-textarea mono" readonly rows="8"></textarea>
-        <button id="onbCopyPrompt" class="onb-btn ghost small">📋 Copiar prompt</button>
-      </div>
+      <label class="onb-label">Prompt pra IA</label>
+      <textarea id="onbPrompt" class="onb-textarea mono" readonly rows="8"></textarea>
+      <button id="onbCopyPrompt" class="onb-btn ghost small onb-block-btn">📋 Copiar prompt</button>
 
-      <label class="onb-label">Cole aqui o JSON que a IA gerou</label>
-      <textarea id="onbImport" class="onb-textarea mono" rows="6" placeholder='{ "meals": [...], "menu": [...] }'></textarea>
+      <label class="onb-label">Resposta do Chat-GPT</label>
+      <textarea id="onbImport" class="onb-textarea mono" rows="6" placeholder="Cole aqui a resposta do Chat-GPT"></textarea>
+      <button id="onbPasteBtn" class="onb-btn ghost small onb-block-btn">📥 Colar resposta do Chat-GPT</button>
+
       <div class="onb-import-row">
-        <button id="onbImportBtn" class="onb-btn ghost small">Importar cardápio</button>
+        <button id="onbImportBtn" class="onb-btn primary small">Importar cardápio</button>
         <span id="onbImportMsg" class="onb-import-msg"></span>
       </div>
       <p class="onb-note">Pode pular esta etapa — o cardápio padrão é carregado e você edita depois.</p>
