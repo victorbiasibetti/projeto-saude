@@ -323,7 +323,7 @@ function renderMonth(){
     cols.forEach(m=>{
       const on = !!rec[m.key];
       if(on) totals[m.key]++;
-      row += `<td><span class="cell-check ${on?'on':''}" data-key="${key}" data-meal="${m.key}">${on?'✓':'·'}</span></td>`;
+      row += `<td><span class="cell-check ${on?'on':''}" data-key="${key}" data-meal="${m.key}">${on?'✓':'○'}</span></td>`;
     });
 
     const beer = state.beer[key] || "";
