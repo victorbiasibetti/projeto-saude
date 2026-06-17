@@ -1,4 +1,4 @@
-# Projeto Enterrada — Dieta & Treino
+# Projeto Saúde — Dieta & Treino
 
 App pessoal de saúde: acompanhamento diário de **dieta** e **treino** numa única página
 com duas abas. Sem framework, sem build, sem backend — **HTML, CSS e JS puros**.
