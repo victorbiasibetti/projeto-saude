@@ -390,17 +390,29 @@ function wireOnboarding(){
   });
 }
 
-// cola o conteúdo da área de transferência no campo de resposta
+// cola a resposta da IA no campo. Leitura automática só rola em contexto seguro
+// (GitHub Pages https). Abrindo via file:// o navegador bloqueia → cai no Ctrl+V.
 function pasteResponse(){
   const ta = $("onbImport");
+  const msg = $("onbImportMsg");
+  const manual = ()=>{
+    ta.focus(); ta.select();
+    msg.textContent = "Agora aperte Ctrl+V (Cmd+V no Mac) pra colar aqui.";
+    msg.className = "onb-import-msg";
+  };
   if(navigator.clipboard && navigator.clipboard.readText){
     navigator.clipboard.readText().then(
-      t=>{ ta.value = t; ta.focus(); },
-      ()=>{ ta.focus(); alert("Não consegui ler a área de transferência. Cole manualmente com Ctrl+V."); }
+      t=>{
+        if(t && t.trim()){
+          ta.value = t; ta.focus();
+          msg.textContent = "✓ Resposta colada — clique em Importar cardápio.";
+          msg.className = "onb-import-msg ok";
+        } else { manual(); }
+      },
+      manual   // permissão negada / file:// → instrui Ctrl+V
     );
   } else {
-    ta.focus();
-    alert("Cole manualmente com Ctrl+V (Cmd+V no Mac).");
+    manual();  // navegador sem readText (ex.: Firefox em página web)
   }
 }
 
