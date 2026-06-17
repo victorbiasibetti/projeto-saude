@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projeto Enterrada — Dieta & Treino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg-grain"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▲</span>
+    <div class="brand-text">
+      <h1>PROJETO ENTERRADA</h1>
+      <p>Dieta &amp; Treino · 1,85 m / 83 kg · meta: cravar a bola até dezembro</p>
+    </div>
+  </div>
+  <div class="today-pill" id="todayPill">—</div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="dieta" role="tab">🍽️ Dieta</button>
+  <button class="tab" data-tab="treino" role="tab">🏋️ Treino</button>
+</nav>
+
+<main>
+  <!-- ===================== DIETA ===================== -->
+  <section class="panel active" id="tab-dieta" role="tabpanel">
+
+    <div class="day-hero">
+      <div class="day-hero-left">
+        <span class="eyebrow" id="heroEyebrow">Hoje</span>
+        <h2 id="heroDate">—</h2>
+        <p id="heroSub">Marque cada refeição conforme for cumprindo.</p>
+        <button id="backToToday" class="back-today">‹ Voltar pra hoje</button>
+      </div>
+      <div class="dunk-meter">
+        <svg viewBox="0 0 120 120" class="ring">
+          <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+          <circle class="ring-fg" cx="60" cy="60" r="52" id="ringFg"></circle>
+        </svg>
+        <div class="dunk-meter-label">
+          <strong id="dayPct">0%</strong>
+          <span>do dia</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="checks" id="todayChecks"></div>
+
+    <div class="beer-row">
+      <label for="beerInput">🍺 Cerveja hoje (litros)</label>
+      <input type="number" id="beerInput" min="0" step="0.5" placeholder="0">
+      <span class="beer-hint">meta: máx ~2 L, 1 dia só no fim de semana</span>
+    </div>
+
+    <div class="section-head">
+      <h3>Cardápio de referência</h3>
+      <span class="kcal-tag">~2.700 kcal · 165 P / 340 C / 75 G</span>
+    </div>
+    <div class="menu-grid" id="menuGrid"></div>
+
+    <div class="section-head">
+      <h3>Histórico do mês</h3>
+      <div class="month-switch">
+        <button id="prevMonth" class="mini-btn">‹</button>
+        <span id="monthLabel">—</span>
+        <button id="nextMonth" class="mini-btn">›</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="month-table" id="monthTable"></table>
+    </div>
+    <div class="legend" id="dietLegend"></div>
+  </section>
+
+  <!-- ===================== TREINO ===================== -->
+  <section class="panel" id="tab-treino" role="tabpanel">
+
+    <div class="phase-banner" id="phaseBanner"></div>
+
+    <div class="section-head">
+      <h3>Divisão semanal</h3>
+      <span class="kcal-tag">Seg A · Qua B · Sex C</span>
+    </div>
+    <div class="week-grid" id="weekGrid"></div>
+
+    <div class="phase-picker">
+      <span>Ver treino na fase:</span>
+      <div class="phase-btns" id="phaseBtns">
+        <button data-phase="0" class="phase-btn">Fase 1 · sem 1-4</button>
+        <button data-phase="1" class="phase-btn">Fase 2 · sem 5-10</button>
+        <button data-phase="2" class="phase-btn">Fase 3 · sem 11+</button>
+      </div>
+    </div>
+
+    <div class="workouts" id="workouts"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Dados salvos no seu navegador (localStorage). Não saem do seu PC.</span>
+  <div class="foot-actions">
+    <button id="restorePlanBtn" class="reset-btn">Restaurar plano padrão</button>
+    <button id="resetBtn" class="reset-btn">Zerar dados</button>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
