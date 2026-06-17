@@ -488,6 +488,7 @@ function wireOnboarding(){
   $("onbGoal").addEventListener("change", updateMetrics);
 
   // step 4
+  $("onbOpenGpt").addEventListener("click", openInChatGPT);
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
   $("onbPasteBtn").addEventListener("click", pasteResponse);
   $("onbImportBtn").addEventListener("click", doImportPlan);
@@ -516,7 +517,7 @@ function pasteResponse(){
       t=>{
         if(t && t.trim()){
           ta.value = t; ta.focus();
-          msg.textContent = "✓ Resposta colada — clique em Importar cardápio.";
+          msg.textContent = "✓ Resposta colada — clique em Importar plano.";
           msg.className = "onb-import-msg ok";
         } else { manual(); }
       },
@@ -539,6 +540,22 @@ function fallbackCopy(txt, done){
   document.body.appendChild(ta); ta.select();
   try{ document.execCommand("copy"); done(); }catch(e){}
   ta.remove();
+}
+
+// copia o prompt e abre o ChatGPT em nova aba (é só colar com Ctrl+V).
+// Abre PRIMEIRO, dentro do clique, pra não cair no bloqueador de pop-up.
+function openInChatGPT(){
+  const btn = $("onbOpenGpt");
+  window.open("https://chatgpt.com/", "_blank", "noopener");
+  const done = ()=>{
+    const o = btn.textContent;
+    btn.textContent = "✓ Copiado — cole no ChatGPT (Ctrl+V)";
+    setTimeout(()=>{ btn.textContent = o; }, 2500);
+  };
+  const txt = $("onbPrompt").value;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done, ()=>fallbackCopy(txt, done));
+  } else { fallbackCopy(txt, done); }
 }
 
 (function initOnboarding(){
