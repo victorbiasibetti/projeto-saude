@@ -334,7 +334,10 @@ tr.totals td{ border-top:2px solid var(--line); font-family:var(--mono); font-we
 .wd{ cursor:pointer; user-select:none; }
 .wd[draggable="true"]{ cursor:grab; }
 .wd[draggable="true"]:active{ cursor:grabbing; }
-.wd.sel{ outline:2px solid var(--lime); outline-offset:-2px; background:rgba(198,255,58,.06); }
+/* selecionado pra remanejar — laranja tracejado, distinto do "hoje" (lime) */
+.wd.sel{ outline:2px dashed var(--orange); outline-offset:-3px; background:rgba(255,122,47,.12);
+         box-shadow:0 0 0 1px var(--orange); }
+.wd.sel .wd-tag{ color:var(--orange); }
 .wd.drop-hover{ border-color:var(--lime); border-style:dashed; background:rgba(198,255,58,.08); }
 
 .workouts{ display:grid; gap:16px; }
