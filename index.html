@@ -310,6 +310,18 @@
   </div>
 </div>
 
+<!-- Modal de erro de importação ao concluir o onboarding -->
+<dialog id="onbDialog" class="onb-dialog">
+  <h3>Não consegui importar</h3>
+  <p>A resposta do Chat-GPT não pôde ser importada (confira se você copiou a resposta inteira).
+     Quer colar de novo ou encerrar mesmo assim? Encerrando, você fica com o plano padrão e pode
+     ajustar depois em <b>Configurar perfil</b>.</p>
+  <div class="onb-dialog-actions">
+    <button id="onbDlgFinish" class="onb-btn ghost">Encerrar mesmo assim</button>
+    <button id="onbDlgRetry" class="onb-btn primary">Colar de novo</button>
+  </div>
+</dialog>
+
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script src="onboarding.js"></script>

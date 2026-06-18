@@ -377,20 +377,16 @@ function finishOnboarding(){
   // se há resposta colada e ainda não foi importada, importa antes de concluir
   const field = $("onbImport");
   const pending = field && field.value && field.value.trim() && !ONB.imported;
-  if(pending){
-    const ok = applyImport(field.value);
-    if(!ok){
-      // erro na importação → deixa o usuário decidir
-      const encerrar = confirm(
-        "Não consegui importar a resposta do Chat-GPT (veja o erro na tela).\n\n" +
-        "OK = encerrar mesmo assim (fica com o plano padrão).\n" +
-        "Cancelar = voltar e colar a resposta de novo."
-      );
-      if(!encerrar){ field.focus(); return; }  // volta pra colar de novo
-      // encerrar mesmo assim → segue com o plano padrão
-    }
+  if(pending && !applyImport(field.value)){
+    // erro na importação → abre o modal pra usuário decidir (colar de novo / encerrar)
+    $("onbDialog").showModal();
+    return;
   }
+  finalizeOnboarding();
+}
 
+// grava o perfil e fecha o onboarding (parte final, independente do import)
+function finalizeOnboarding(){
   const d = ONB.draft;
   user = {
     name: d.name || "",
@@ -528,6 +524,10 @@ function wireOnboarding(){
   $("onbImportBtn").addEventListener("click", importFromField);
   // editar o campo invalida o import anterior (Concluir vai re-importar)
   $("onbImport").addEventListener("input", ()=>{ ONB.imported = false; });
+
+  // modal de erro de import no Concluir
+  $("onbDlgRetry").addEventListener("click", ()=>{ $("onbDialog").close(); $("onbImport").focus(); });
+  $("onbDlgFinish").addEventListener("click", ()=>{ $("onbDialog").close(); finalizeOnboarding(); });
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);
