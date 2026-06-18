@@ -281,23 +281,21 @@
     <!-- STEP 4 — prompt p/ IA + import -->
     <section class="onb-step" data-step="4" hidden>
       <ol class="onb-steps-list">
-        <li>Copie o prompt abaixo e cole no Chat-GPT (ou outra IA).</li>
-        <li>O Chat-GPT vai te devolver uma resposta.</li>
-        <li>Cole essa resposta aqui embaixo e clique em Importar plano.</li>
+        <li>Clique em <b>Copiar + Abrir o Chat-GPT</b> e cole o prompt lá com Ctrl+V.</li>
+        <li>Quando o Chat-GPT responder, <b>copie a resposta</b> e cole no campo abaixo.</li>
+        <li>Clique em <b>Importar Plano do Chat-GPT</b> (ou só conclua — a gente importa pra você).</li>
       </ol>
 
       <label class="onb-label">Prompt pra IA</label>
       <textarea id="onbPrompt" class="onb-textarea mono" readonly rows="8"></textarea>
-      <button id="onbOpenGpt" class="onb-btn primary small onb-block-btn">🤖 Abrir o ChatGPT</button>
+      <button id="onbOpenGpt" class="onb-btn primary small onb-block-btn">🤖 Copiar + Abrir o Chat-GPT</button>
       <span id="onbGptMsg" class="onb-import-msg"></span>
       <button id="onbCopyPrompt" class="onb-btn ghost small onb-block-btn">📋 Só copiar prompt</button>
 
       <label class="onb-label">Resposta do Chat-GPT</label>
-      <textarea id="onbImport" class="onb-textarea mono" rows="6" placeholder="Cole aqui a resposta do Chat-GPT"></textarea>
-      <button id="onbPasteBtn" class="onb-btn ghost small onb-block-btn">📥 Colar resposta do Chat-GPT</button>
-
+      <textarea id="onbImport" class="onb-textarea mono" rows="6" placeholder="Cole aqui a resposta do Chat-GPT (Ctrl+V)"></textarea>
+      <button id="onbImportBtn" class="onb-btn primary onb-block-btn" style="margin-top:10px">📥 Importar Plano do Chat-GPT</button>
       <div class="onb-import-row">
-        <button id="onbImportBtn" class="onb-btn primary small">Importar plano</button>
         <span id="onbImportMsg" class="onb-import-msg"></span>
       </div>
       <p class="onb-note">Pode pular esta etapa — o plano padrão é carregado e você edita depois.</p>
@@ -311,6 +309,40 @@
     </div>
   </div>
 </div>
+
+<!-- Modal de erro de importação ao concluir o onboarding -->
+<dialog id="onbDialog" class="onb-dialog">
+  <div class="onb-head">
+    <span class="onb-mark">▲</span>
+    <div>
+      <h2>Não consegui importar</h2>
+      <p>A resposta do Chat-GPT não pôde ser importada — confira se você copiou a resposta inteira.</p>
+    </div>
+  </div>
+  <p class="onb-note">Quer colar de novo ou encerrar mesmo assim? Encerrando, você fica com o
+     plano padrão e pode ajustar depois em <b>Configurar perfil</b>.</p>
+  <div class="onb-dialog-actions">
+    <button id="onbDlgFinish" class="onb-btn ghost">Encerrar mesmo assim</button>
+    <button id="onbDlgRetry" class="onb-btn primary">Colar de novo</button>
+  </div>
+</dialog>
+
+<!-- Modal de conflito: trocar cardápio quando já há dias marcados -->
+<dialog id="onbConfirmDialog" class="onb-dialog">
+  <div class="onb-head">
+    <span class="onb-mark">▲</span>
+    <div>
+      <h2>Trocar o cardápio?</h2>
+      <p>Você já tem dias marcados.</p>
+    </div>
+  </div>
+  <p class="onb-note">Trocar o cardápio muda as refeições — os dias antigos vão aparecer como
+     não cumpridos (os dados <b>não são apagados</b>). Quer continuar?</p>
+  <div class="onb-dialog-actions">
+    <button id="onbCfmCancel" class="onb-btn ghost">Cancelar</button>
+    <button id="onbCfmContinue" class="onb-btn primary">Continuar</button>
+  </div>
+</dialog>
 
 <script src="data.js"></script>
 <script src="app.js"></script>

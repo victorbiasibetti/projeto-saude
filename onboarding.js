@@ -15,7 +15,10 @@
 const ONB = {
   step: 1,
   total: 4,
-  draft: {},        // respostas acumuladas
+  draft: {},               // respostas acumuladas
+  imported: false,         // true quando o texto atual do campo já foi importado com sucesso
+  pendingImport: null,     // dados aguardando confirmação no modal de conflito
+  finishAfterImport: false,// veio do "Concluir": finaliza o onboarding após o import
 };
 
 // flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
@@ -310,53 +313,101 @@ function sanitizeWeek(rawWeek, workouts){
   return week;
 }
 
-function doImportPlan(){
+// importa o que está no campo de resposta (botão "Importar Plano do Chat-GPT").
+function importFromField(){
   const msg = $("onbImportMsg");
+  const text = $("onbImport").value;
+  if(!text || !text.trim()){
+    msg.textContent = "Cole a resposta do Chat-GPT no campo acima primeiro.";
+    msg.className = "onb-import-msg";
+    return false;
+  }
+  return applyImport(text);
+}
+
+// aplica o texto importado. Retorna true (gravou), false (erro) ou "pending"
+// (abriu o modal de conflito de histórico — a decisão grava depois).
+function applyImport(text){
+  const msg = $("onbImportMsg");
+  let parsed, newMeals;
   try{
     let raw;
-    try{ raw = parseLooseJSON($("onbImport").value); }
-    catch(_){ throw new Error("Não entendi a resposta. Cole o texto completo que o Chat-GPT gerou."); }
-    const parsed = sanitizeImport(raw);
-    const newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
-
-    // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
-    // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Avisa antes.
-    const hadHistory = state && state.days && Object.keys(state.days).length > 0;
-    const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
-    if(hadHistory && keysChange &&
-       !confirm("Você já tem dias marcados. Trocar o cardápio muda as refeições — os dias antigos vão aparecer como não cumpridos (os dados não são apagados). Continuar?")){
-      msg.textContent = "Import cancelado.";
-      msg.className = "onb-import-msg";
-      return;
-    }
-
-    plan.menu = parsed.menu;
-    plan.meals = newMeals;
-
-    // treino é OPCIONAL: só substitui se a IA mandou treinos válidos; senão mantém o atual.
-    let treinoMsg = "";
-    if(parsed.workouts){
-      plan.workouts = parsed.workouts;
-      plan.week = sanitizeWeek(parsed._weekRaw, parsed.workouts);
-      treinoMsg = ` e ${parsed.workouts.length} treinos`;
-    }
-
-    savePlan();
-    if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
-    if(parsed.macros) ONB.draft.macros = parsed.macros;
-    refreshAll(); // re-aponta os espelhos e re-renderiza (mesmo se o usuário fizer "Responder depois")
-    msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados`;
-    msg.className = "onb-import-msg ok";
+    try{ raw = parseLooseJSON(text); }
+    catch(_){ throw new Error("A resposta veio incompleta."); }
+    parsed = sanitizeImport(raw);
+    newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
   }catch(e){
-    msg.textContent = "✗ " + e.message;
+    msg.textContent = "✗ " + e.message + " Copie a resposta do Chat-GPT de novo e clique em importar.";
     msg.className = "onb-import-msg err";
+    return false;
   }
+
+  // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
+  // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Confirma antes.
+  const hadHistory = state && state.days && Object.keys(state.days).length > 0;
+  const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
+  if(hadHistory && keysChange){
+    ONB.pendingImport = { parsed, newMeals };
+    $("onbConfirmDialog").showModal();
+    return "pending";
+  }
+
+  commitImport(parsed, newMeals);
+  return true;
+}
+
+// grava de fato o plano importado (dieta + treino opcional) e re-renderiza.
+function commitImport(parsed, newMeals){
+  plan.menu = parsed.menu;
+  plan.meals = newMeals;
+
+  let treinoMsg = "";
+  if(parsed.workouts){   // treino é OPCIONAL: só troca se vier válido
+    plan.workouts = parsed.workouts;
+    plan.week = sanitizeWeek(parsed._weekRaw, parsed.workouts);
+    treinoMsg = ` e ${parsed.workouts.length} treinos`;
+  }
+
+  savePlan();
+  if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
+  if(parsed.macros) ONB.draft.macros = parsed.macros;
+  refreshAll();
+  ONB.imported = true;
+
+  const msg = $("onbImportMsg");
+  msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados!`;
+  msg.className = "onb-import-msg ok";
+}
+
+// aborta o import pendente do modal de conflito (botão Cancelar ou ESC)
+function cancelPendingImport(){
+  ONB.pendingImport = null;
+  ONB.finishAfterImport = false;
+  const msg = $("onbImportMsg");
+  msg.textContent = "Importação cancelada.";
+  msg.className = "onb-import-msg";
 }
 
 /* ===========================================================
    FINALIZAR / PULAR
    =========================================================== */
 function finishOnboarding(){
+  // se há resposta colada e ainda não foi importada, importa antes de concluir
+  const field = $("onbImport");
+  const hasPending = field && field.value && field.value.trim() && !ONB.imported;
+  if(hasPending){
+    ONB.finishAfterImport = true;
+    const r = applyImport(field.value);
+    if(r === "pending") return;            // modal de conflito decide e finaliza depois
+    ONB.finishAfterImport = false;
+    if(r === false){ $("onbDialog").showModal(); return; }  // erro de import → modal
+    // r === true → import ok, segue pro finalize
+  }
+  finalizeOnboarding();
+}
+
+// grava o perfil e fecha o onboarding (parte final, independente do import)
+function finalizeOnboarding(){
   const d = ONB.draft;
   user = {
     name: d.name || "",
@@ -406,7 +457,8 @@ function prefillFromUser(){
 }
 
 function openOnboarding(){
-  ONB.step = 1; ONB.draft = {};
+  ONB.step = 1; ONB.draft = {}; ONB.imported = false;
+  const imp = $("onbImport"); if(imp) imp.value = "";   // limpa resposta anterior
   // popula sugestões de projeto
   const chips = $("onbProjectChips");
   chips.innerHTML = "";
@@ -490,8 +542,29 @@ function wireOnboarding(){
   // step 4
   $("onbOpenGpt").addEventListener("click", openInChatGPT);
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
-  $("onbPasteBtn").addEventListener("click", pasteResponse);
-  $("onbImportBtn").addEventListener("click", doImportPlan);
+  $("onbImportBtn").addEventListener("click", importFromField);
+  // editar o campo invalida o import anterior (Concluir vai re-importar)
+  $("onbImport").addEventListener("input", ()=>{ ONB.imported = false; });
+
+  // modal de erro de import no Concluir
+  $("onbDlgRetry").addEventListener("click", ()=>{ $("onbDialog").close(); $("onbImport").focus(); });
+  $("onbDlgFinish").addEventListener("click", ()=>{ $("onbDialog").close(); finalizeOnboarding(); });
+  // ESC no modal de erro = "colar de novo" (não finaliza)
+  $("onbDialog").addEventListener("cancel", ()=>{ ONB.finishAfterImport = false; });
+
+  // modal de conflito (trocar cardápio com histórico)
+  $("onbCfmContinue").addEventListener("click", ()=>{
+    $("onbConfirmDialog").close();
+    const p = ONB.pendingImport; ONB.pendingImport = null;
+    if(p) commitImport(p.parsed, p.newMeals);
+    if(ONB.finishAfterImport){ ONB.finishAfterImport = false; finalizeOnboarding(); }
+  });
+  $("onbCfmCancel").addEventListener("click", ()=>{
+    $("onbConfirmDialog").close();
+    cancelPendingImport();
+  });
+  // ESC no modal de conflito = Cancelar (só dispara em dismiss, não no close() dos botões)
+  $("onbConfirmDialog").addEventListener("cancel", cancelPendingImport);
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);
@@ -500,32 +573,6 @@ function wireOnboarding(){
     if(e.target.files && e.target.files[0]) importAll(e.target.files[0]);
     e.target.value = "";
   });
-}
-
-// cola a resposta da IA no campo. Leitura automática só rola em contexto seguro
-// (GitHub Pages https). Abrindo via file:// o navegador bloqueia → cai no Ctrl+V.
-function pasteResponse(){
-  const ta = $("onbImport");
-  const msg = $("onbImportMsg");
-  const manual = ()=>{
-    ta.focus(); ta.select();
-    msg.textContent = "Agora aperte Ctrl+V (Cmd+V no Mac) pra colar aqui.";
-    msg.className = "onb-import-msg";
-  };
-  if(navigator.clipboard && navigator.clipboard.readText){
-    navigator.clipboard.readText().then(
-      t=>{
-        if(t && t.trim()){
-          ta.value = t; ta.focus();
-          msg.textContent = "✓ Resposta colada — clique em Importar plano.";
-          msg.className = "onb-import-msg ok";
-        } else { manual(); }
-      },
-      manual   // permissão negada / file:// → instrui Ctrl+V
-    );
-  } else {
-    manual();  // navegador sem readText (ex.: Firefox em página web)
-  }
 }
 
 function copyText(txt, btn){
