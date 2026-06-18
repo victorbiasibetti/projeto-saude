@@ -16,6 +16,7 @@ const ONB = {
   step: 1,
   total: 4,
   draft: {},        // respostas acumuladas
+  imported: false,  // true quando o texto atual do campo já foi importado com sucesso
 };
 
 // flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
@@ -310,29 +311,19 @@ function sanitizeWeek(rawWeek, workouts){
   return week;
 }
 
-// lê a resposta direto da área de transferência e importa.
-function importPlanFromClipboard(){
+// importa o que está no campo de resposta (botão "Importar Plano do Chat-GPT").
+function importFromField(){
   const msg = $("onbImportMsg");
-  const fail = (txt)=>{ msg.textContent = "✗ " + txt; msg.className = "onb-import-msg err"; };
-  if(!(navigator.clipboard && navigator.clipboard.readText)){
-    fail("Seu navegador não deixa ler a área de transferência. Copie a resposta no Chat-GPT e tente de novo.");
-    return;
+  const text = $("onbImport").value;
+  if(!text || !text.trim()){
+    msg.textContent = "Cole a resposta do Chat-GPT no campo acima primeiro.";
+    msg.className = "onb-import-msg";
+    return false;
   }
-  msg.textContent = "Lendo a área de transferência…";
-  msg.className = "onb-import-msg";
-  navigator.clipboard.readText().then(
-    text=>{
-      if(!text || !text.trim()){
-        fail("Não achei nada copiado. Copie a resposta do Chat-GPT e clique de novo.");
-        return;
-      }
-      applyImport(text);
-    },
-    ()=> fail("Não consegui ler a área de transferência. Copie a resposta do Chat-GPT de novo e tente.")
-  );
+  return applyImport(text);
 }
 
-// aplica o texto importado (parse + sanitiza + grava). Erros pedem copiar de novo.
+// aplica o texto importado (parse + sanitiza + grava). Retorna true em sucesso.
 function applyImport(text){
   const msg = $("onbImportMsg");
   try{
@@ -350,7 +341,7 @@ function applyImport(text){
        !confirm("Você já tem dias marcados. Trocar o cardápio muda as refeições — os dias antigos vão aparecer como não cumpridos (os dados não são apagados). Continuar?")){
       msg.textContent = "Import cancelado.";
       msg.className = "onb-import-msg";
-      return;
+      return false;
     }
 
     plan.menu = parsed.menu;
@@ -368,11 +359,14 @@ function applyImport(text){
     if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
     if(parsed.macros) ONB.draft.macros = parsed.macros;
     refreshAll(); // re-aponta os espelhos e re-renderiza (mesmo se o usuário fizer "Responder depois")
+    ONB.imported = true;   // já importou esse texto — não re-importa no Concluir
     msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados!`;
     msg.className = "onb-import-msg ok";
+    return true;
   }catch(e){
     msg.textContent = "✗ " + e.message + " Copie a resposta do Chat-GPT de novo e clique em importar.";
     msg.className = "onb-import-msg err";
+    return false;
   }
 }
 
@@ -380,6 +374,23 @@ function applyImport(text){
    FINALIZAR / PULAR
    =========================================================== */
 function finishOnboarding(){
+  // se há resposta colada e ainda não foi importada, importa antes de concluir
+  const field = $("onbImport");
+  const pending = field && field.value && field.value.trim() && !ONB.imported;
+  if(pending){
+    const ok = applyImport(field.value);
+    if(!ok){
+      // erro na importação → deixa o usuário decidir
+      const encerrar = confirm(
+        "Não consegui importar a resposta do Chat-GPT (veja o erro na tela).\n\n" +
+        "OK = encerrar mesmo assim (fica com o plano padrão).\n" +
+        "Cancelar = voltar e colar a resposta de novo."
+      );
+      if(!encerrar){ field.focus(); return; }  // volta pra colar de novo
+      // encerrar mesmo assim → segue com o plano padrão
+    }
+  }
+
   const d = ONB.draft;
   user = {
     name: d.name || "",
@@ -429,7 +440,8 @@ function prefillFromUser(){
 }
 
 function openOnboarding(){
-  ONB.step = 1; ONB.draft = {};
+  ONB.step = 1; ONB.draft = {}; ONB.imported = false;
+  const imp = $("onbImport"); if(imp) imp.value = "";   // limpa resposta anterior
   // popula sugestões de projeto
   const chips = $("onbProjectChips");
   chips.innerHTML = "";
@@ -513,7 +525,9 @@ function wireOnboarding(){
   // step 4
   $("onbOpenGpt").addEventListener("click", openInChatGPT);
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
-  $("onbImportBtn").addEventListener("click", importPlanFromClipboard);
+  $("onbImportBtn").addEventListener("click", importFromField);
+  // editar o campo invalida o import anterior (Concluir vai re-importar)
+  $("onbImport").addEventListener("input", ()=>{ ONB.imported = false; });
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);

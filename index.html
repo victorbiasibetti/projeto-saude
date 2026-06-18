@@ -282,8 +282,8 @@
     <section class="onb-step" data-step="4" hidden>
       <ol class="onb-steps-list">
         <li>Clique em <b>Copiar + Abrir o Chat-GPT</b> e cole o prompt lá com Ctrl+V.</li>
-        <li>Quando o Chat-GPT responder, <b>copie a resposta dele</b> (botão de copiar do Chat-GPT).</li>
-        <li>Volte aqui e clique em <b>Importar Plano do Chat-GPT</b>.</li>
+        <li>Quando o Chat-GPT responder, <b>copie a resposta</b> e cole no campo abaixo.</li>
+        <li>Clique em <b>Importar Plano do Chat-GPT</b> (ou só conclua — a gente importa pra você).</li>
       </ol>
 
       <label class="onb-label">Prompt pra IA</label>
@@ -292,7 +292,9 @@
       <span id="onbGptMsg" class="onb-import-msg"></span>
       <button id="onbCopyPrompt" class="onb-btn ghost small onb-block-btn">📋 Só copiar prompt</button>
 
-      <button id="onbImportBtn" class="onb-btn primary onb-block-btn" style="margin-top:18px">📥 Importar Plano do Chat-GPT</button>
+      <label class="onb-label">Resposta do Chat-GPT</label>
+      <textarea id="onbImport" class="onb-textarea mono" rows="6" placeholder="Cole aqui a resposta do Chat-GPT (Ctrl+V)"></textarea>
+      <button id="onbImportBtn" class="onb-btn primary onb-block-btn" style="margin-top:10px">📥 Importar Plano do Chat-GPT</button>
       <div class="onb-import-row">
         <span id="onbImportMsg" class="onb-import-msg"></span>
       </div>
