@@ -18,14 +18,15 @@ let plan = loadPlan();
 
 // Espelhos das seções do plano (mantêm os nomes que o resto do código já usa).
 // São derivados de `plan`; se o plano mudar, chame syncPlanRefs() + re-render.
-let MEALS, MENU, WEEK, WORKOUTS, PHASES, CICLO_INICIO;
+let MEALS, MENU, WEEK, WORKOUTS;
 syncPlanRefs();
 
 function loadPlan(){
   try{
     const raw = localStorage.getItem(PLAN_KEY);
     if(raw){
-      const p = JSON.parse(raw);
+      let p = JSON.parse(raw);
+      p = migratePlan(p);          // v1 (treino com fases) → v2 (divisão semanal)
       if(isValidPlan(p)) return p;
     }
   }catch(e){ /* cai no seed abaixo */ }
@@ -33,9 +34,21 @@ function loadPlan(){
 }
 // valida o mínimo pra não quebrar o render se o JSON salvo estiver corrompido/antigo
 function isValidPlan(p){
-  return p && Array.isArray(p.meals) && Array.isArray(p.menu)
-           && Array.isArray(p.week) && Array.isArray(p.workouts)
-           && Array.isArray(p.phases) && typeof p.cicloInicio === "string";
+  return p && p.version === 2
+           && Array.isArray(p.meals) && Array.isArray(p.menu)
+           && Array.isArray(p.week) && Array.isArray(p.workouts);
+}
+// migra plano antigo (v1: treino em 3 fases) pro v2 (sem fases). Preserva a DIETA
+// (menu/meals); só o treino é reescrito pro novo default. Idempotente.
+function migratePlan(p){
+  if(!p || p.version === 2) return p;
+  p.version = 2;
+  p.workouts = JSON.parse(JSON.stringify(DEFAULT_PLAN.workouts));
+  p.week = JSON.parse(JSON.stringify(DEFAULT_PLAN.week));
+  delete p.phases;
+  delete p.cicloInicio;
+  try{ localStorage.setItem(PLAN_KEY, JSON.stringify(p)); }catch(e){}
+  return p;
 }
 // copia (deep clone) o template pro localStorage e devolve
 function seedPlan(){
@@ -53,8 +66,6 @@ function syncPlanRefs(){
   MENU = plan.menu;
   WEEK = plan.week;
   WORKOUTS = plan.workouts;
-  PHASES = plan.phases;
-  CICLO_INICIO = keyToDate(plan.cicloInicio);
 }
 // restaura o plano padrão (descarta edições do plano; NÃO mexe nos checks)
 function restorePlan(){
@@ -101,13 +112,12 @@ function refreshAll(){
   syncPlanRefs();
   applyUser();
   renderDay(); renderMenu(); renderMonth(); renderLegend();
-  renderPhaseBanner(); renderWeek(); renderWorkouts();
+  renderWeek(); renderWorkouts();
 }
 
 /* ---------- estado do usuário (checks/cerveja) ---------- */
 let state = load();
 let viewYear, viewMonth;       // mês exibido na tabela
-let activePhase = 0;           // fase exibida nos treinos
 let selectedKey = todayKey();  // dia sendo editado no painel do topo (padrão: hoje)
 
 function load(){
@@ -144,14 +154,6 @@ function dayRec(key){
   if(!state.days[key]) state.days[key] = {};
   return state.days[key];
 }
-
-/* ---------- fase atual pelo nº de semanas desde o início ---------- */
-function currentWeek(){
-  const now = new Date();
-  const diffDays = Math.floor((now - CICLO_INICIO) / 86400000);
-  return Math.max(1, Math.floor(diffDays/7) + 1);
-}
-function phaseOfWeek(w){ if(w<=4) return 0; if(w<=10) return 1; return 2; }
 
 /* ===========================================================
    TABS
@@ -194,7 +196,7 @@ function renderDay(){
   const quando = isToday ? "hoje" : "neste dia";
   document.getElementById("heroSub").textContent =
     wk && wk.tag!=="off"
-      ? "Treino: " + wk.treino + ". Marque as refeições cumpridas " + quando + "."
+      ? "Treino " + wk.tag + (wk.nome ? " · " + wk.nome : "") + ". Marque as refeições cumpridas " + quando + "."
       : "Dia de descanso. Marque as refeições cumpridas " + quando + ".";
 
   // checks
@@ -391,14 +393,8 @@ function renderLegend(){
 /* ===========================================================
    TREINO
    =========================================================== */
-function renderPhaseBanner(){
-  const w = currentWeek();
-  const p = phaseOfWeek(w);
-  const ph = PHASES[p];
-  document.getElementById("phaseBanner").innerHTML =
-    `<div class="pb-top"><h3>${ph.nome}</h3><span class="pb-week">semana ${w} do ciclo · ${ph.semanas}</span></div>
-     <p>${ph.desc}</p>`;
-}
+let weekSelDow = null;   // dia selecionado no modo toque (pra remanejar treino)
+let weekLastDrop = 0;    // timestamp do último drop (ignora o "click fantasma" pós-drag)
 
 function renderWeek(){
   const grid = document.getElementById("weekGrid");
@@ -408,16 +404,81 @@ function renderWeek(){
   grid.innerHTML = "";
   order.forEach(dow=>{
     const w = WEEK.find(x=>x.dow===dow);
+    if(!w) return;
     const isToday = dow===todayDow;
+    const isTreino = w.tag!=="off";
     const el = document.createElement("div");
-    el.className = `wd tag-${w.tag} ${isToday?'today':''}`;
+    el.className = `wd tag-${w.tag} ${isToday?'today':''} ${weekSelDow===dow?'sel':''}`;
+    el.dataset.dow = dow;
+    if(isTreino) el.setAttribute("draggable", "true");
     const tagTxt = w.tag==="off" ? "Descanso" : w.tag;
     el.innerHTML =
       `<span class="wd-day">${w.dia.slice(0,3)}</span>
        <span class="wd-tag">${tagTxt}</span>
-       <span class="wd-name">${w.tag==="off" ? "" : w.treino.split("—")[1].trim()}</span>`;
+       <span class="wd-name">${w.tag==="off" ? "" : (w.nome || "")}</span>`;
+
+    // drag-and-drop (desktop)
+    if(isTreino){
+      el.addEventListener("dragstart", e=>{
+        weekSelDow = null;   // some com qualquer seleção de toque ao começar a arrastar
+        e.dataTransfer.setData("text/plain", String(dow));
+        e.dataTransfer.effectAllowed = "move";
+      });
+    }
+    el.addEventListener("dragover", e=>{ e.preventDefault(); el.classList.add("drop-hover"); });
+    el.addEventListener("dragleave", e=>{
+      if(!el.contains(e.relatedTarget)) el.classList.remove("drop-hover"); // ignora entrar nos filhos
+    });
+    el.addEventListener("drop", e=>{
+      e.preventDefault(); el.classList.remove("drop-hover");
+      weekLastDrop = (typeof performance!=="undefined" ? performance.now() : Date.now());
+      const src = parseInt(e.dataTransfer.getData("text/plain"));
+      if(!isNaN(src)) weekReassign(src, dow);
+    });
+    // toque/clique (funciona em mobile e desktop) — ignora o click fantasma logo após um drop
+    el.addEventListener("click", ()=>{
+      const now = (typeof performance!=="undefined" ? performance.now() : Date.now());
+      if(now - weekLastDrop < 350) return;
+      weekTap(dow);
+    });
+
     grid.appendChild(el);
   });
+}
+
+// modo toque: 1º toque seleciona o treino, 2º toque no destino move/troca
+function weekTap(dow){
+  const w = WEEK.find(x=>x.dow===dow);
+  if(!w) return;
+  if(weekSelDow === null){
+    if(w.tag === "off") return;   // nada pra mover num dia de descanso
+    weekSelDow = dow;
+    renderWeek();
+  } else if(weekSelDow === dow){
+    weekSelDow = null;            // toca de novo = desmarca
+    renderWeek();
+  } else {
+    weekReassign(weekSelDow, dow); // weekReassign limpa a seleção e re-renderiza
+  }
+}
+
+// remaneja: destino vazio = move; destino ocupado = troca. Persiste.
+function weekReassign(src, dst){
+  weekSelDow = null;
+  if(src === dst){ renderWeek(); return; }
+  const a = WEEK.find(x=>x.dow===src), b = WEEK.find(x=>x.dow===dst);
+  if(!a || !b || a.tag === "off"){ renderWeek(); return; }
+  if(b.tag === "off"){
+    b.tag = a.tag; b.nome = a.nome;
+    a.tag = "off"; a.nome = "";
+  } else {
+    const t = a.tag, n = a.nome;
+    a.tag = b.tag; a.nome = b.nome;
+    b.tag = t;     b.nome = n;
+  }
+  savePlan();
+  renderWeek();
+  renderDay();   // o treino de HOJE pode ter mudado → atualiza o subtítulo
 }
 
 function renderWorkouts(){
@@ -425,22 +486,20 @@ function renderWorkouts(){
   wrap.innerHTML = "";
   WORKOUTS.forEach(wo=>{
     const rows = wo.ex.map(e=>{
-      const set = e[1+activePhase];
-      const skip = set==="—";
       return `<tr>
-        <td><span class="ex-name">${e[0]}</span></td>
-        <td><span class="ex-set ${skip?'skip':''}">${set}</span></td>
-        <td class="ex-grp">${e[4]}</td>
-        <td class="ex-obs obs-cell">${e[5]}</td>
+        <td><span class="ex-name">${e.nome}</span></td>
+        <td><span class="ex-set">${e.set}</span></td>
+        <td class="ex-grp">${e.grupo || ""}</td>
+        <td class="ex-obs obs-cell">${e.obs || ""}</td>
       </tr>`;
     }).join("");
     const card = document.createElement("div");
     card.className = "workout acc-"+wo.accent;
     card.innerHTML =
       `<div class="workout-head">
-         <span class="wid">${wo.dia} · Treino ${wo.id}</span>
+         <span class="wid">Treino ${wo.id}</span>
          <h4>${wo.titulo}</h4>
-         <p>${wo.sub}</p>
+         ${wo.sub ? `<p>${wo.sub}</p>` : ""}
        </div>
        <table class="ex-table">
          <thead><tr>
@@ -450,21 +509,6 @@ function renderWorkouts(){
        </table>`;
     wrap.appendChild(card);
   });
-}
-
-function setupPhaseButtons(){
-  const btns = document.querySelectorAll(".phase-btn");
-  btns.forEach(b=>{
-    b.addEventListener("click", ()=>{
-      activePhase = parseInt(b.dataset.phase);
-      btns.forEach(x=>x.classList.remove("active"));
-      b.classList.add("active");
-      renderWorkouts();
-    });
-  });
-  // começa na fase atual do ciclo
-  activePhase = phaseOfWeek(currentWeek());
-  btns[activePhase].classList.add("active");
 }
 
 /* ===========================================================
@@ -484,7 +528,7 @@ document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
     restorePlan();
     // re-render de tudo que depende do plano
     renderDay(); renderMenu(); renderMonth();
-    renderPhaseBanner(); renderWeek(); renderWorkouts();
+    renderWeek(); renderWorkouts();
   }
 });
 
@@ -502,8 +546,6 @@ document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
   renderMonth();
   renderLegend();
 
-  renderPhaseBanner();
   renderWeek();
-  setupPhaseButtons();
   renderWorkouts();
 })();
