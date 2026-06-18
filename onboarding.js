@@ -310,12 +310,35 @@ function sanitizeWeek(rawWeek, workouts){
   return week;
 }
 
-function doImportPlan(){
+// lê a resposta direto da área de transferência e importa.
+function importPlanFromClipboard(){
+  const msg = $("onbImportMsg");
+  const fail = (txt)=>{ msg.textContent = "✗ " + txt; msg.className = "onb-import-msg err"; };
+  if(!(navigator.clipboard && navigator.clipboard.readText)){
+    fail("Seu navegador não deixa ler a área de transferência. Copie a resposta no Chat-GPT e tente de novo.");
+    return;
+  }
+  msg.textContent = "Lendo a área de transferência…";
+  msg.className = "onb-import-msg";
+  navigator.clipboard.readText().then(
+    text=>{
+      if(!text || !text.trim()){
+        fail("Não achei nada copiado. Copie a resposta do Chat-GPT e clique de novo.");
+        return;
+      }
+      applyImport(text);
+    },
+    ()=> fail("Não consegui ler a área de transferência. Copie a resposta do Chat-GPT de novo e tente.")
+  );
+}
+
+// aplica o texto importado (parse + sanitiza + grava). Erros pedem copiar de novo.
+function applyImport(text){
   const msg = $("onbImportMsg");
   try{
     let raw;
-    try{ raw = parseLooseJSON($("onbImport").value); }
-    catch(_){ throw new Error("Não entendi a resposta. Cole o texto completo que o Chat-GPT gerou."); }
+    try{ raw = parseLooseJSON(text); }
+    catch(_){ throw new Error("A resposta veio incompleta."); }
     const parsed = sanitizeImport(raw);
     const newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
 
@@ -345,10 +368,10 @@ function doImportPlan(){
     if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
     if(parsed.macros) ONB.draft.macros = parsed.macros;
     refreshAll(); // re-aponta os espelhos e re-renderiza (mesmo se o usuário fizer "Responder depois")
-    msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados`;
+    msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados!`;
     msg.className = "onb-import-msg ok";
   }catch(e){
-    msg.textContent = "✗ " + e.message;
+    msg.textContent = "✗ " + e.message + " Copie a resposta do Chat-GPT de novo e clique em importar.";
     msg.className = "onb-import-msg err";
   }
 }
@@ -490,8 +513,7 @@ function wireOnboarding(){
   // step 4
   $("onbOpenGpt").addEventListener("click", openInChatGPT);
   $("onbCopyPrompt").addEventListener("click", ()=> copyText($("onbPrompt").value, $("onbCopyPrompt")));
-  $("onbPasteBtn").addEventListener("click", pasteResponse);
-  $("onbImportBtn").addEventListener("click", doImportPlan);
+  $("onbImportBtn").addEventListener("click", importPlanFromClipboard);
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);
@@ -500,32 +522,6 @@ function wireOnboarding(){
     if(e.target.files && e.target.files[0]) importAll(e.target.files[0]);
     e.target.value = "";
   });
-}
-
-// cola a resposta da IA no campo. Leitura automática só rola em contexto seguro
-// (GitHub Pages https). Abrindo via file:// o navegador bloqueia → cai no Ctrl+V.
-function pasteResponse(){
-  const ta = $("onbImport");
-  const msg = $("onbImportMsg");
-  const manual = ()=>{
-    ta.focus(); ta.select();
-    msg.textContent = "Agora aperte Ctrl+V (Cmd+V no Mac) pra colar aqui.";
-    msg.className = "onb-import-msg";
-  };
-  if(navigator.clipboard && navigator.clipboard.readText){
-    navigator.clipboard.readText().then(
-      t=>{
-        if(t && t.trim()){
-          ta.value = t; ta.focus();
-          msg.textContent = "✓ Resposta colada — clique em Importar plano.";
-          msg.className = "onb-import-msg ok";
-        } else { manual(); }
-      },
-      manual   // permissão negada / file:// → instrui Ctrl+V
-    );
-  } else {
-    manual();  // navegador sem readText (ex.: Firefox em página web)
-  }
 }
 
 function copyText(txt, btn){
