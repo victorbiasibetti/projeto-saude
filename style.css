@@ -394,19 +394,19 @@ body.onb-open{ overflow:hidden; }
   box-shadow:var(--shadow); padding:clamp(20px,4vw,34px);
   animation:fade .35s ease;
 }
-/* modal nativo <dialog> — tema escuro */
+/* modal nativo <dialog> — mesmo guideline do card de onboarding.
+   margin:auto reativa a centralização do UA (o reset *{margin:0} a tinha matado). */
 .onb-dialog{
+  margin:auto;
   border:1px solid var(--line); border-radius:var(--radius);
   background:linear-gradient(160deg, var(--panel), var(--bg-2)); color:var(--txt);
-  max-width:440px; width:calc(100% - 32px); padding:26px;
+  max-width:460px; width:calc(100% - 32px); padding:clamp(20px,4vw,30px);
   box-shadow:var(--shadow);
 }
-.onb-dialog::backdrop{ background:rgba(8,10,14,.72); backdrop-filter:blur(4px); }
+.onb-dialog::backdrop{ background:rgba(8,10,14,.78); backdrop-filter:blur(6px); }
 .onb-dialog[open]{ animation:fade .25s ease; }
-.onb-dialog h3{ font-family:var(--display); text-transform:uppercase; letter-spacing:.03em;
-  font-size:20px; margin-bottom:10px; }
-.onb-dialog p{ color:var(--txt-dim); font-size:14px; line-height:1.55; }
-.onb-dialog p b{ color:var(--txt); }
+.onb-dialog .onb-head{ margin-bottom:14px; }
+.onb-dialog .onb-note{ margin-top:0; }
 .onb-dialog-actions{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-top:22px; }
 
 .onb-head{ display:flex; align-items:flex-start; gap:14px; margin-bottom:20px; }
