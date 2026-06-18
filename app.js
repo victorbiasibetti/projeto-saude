@@ -399,8 +399,8 @@ let weekLastDrop = 0;    // timestamp do último drop (ignora o "click fantasma"
 function renderWeek(){
   const grid = document.getElementById("weekGrid");
   const todayDow = new Date().getDay();
-  // ordem seg→dom
-  const order = [1,2,3,4,5,6,0];
+  // ordem dom→sáb (semana começa no domingo)
+  const order = [0,1,2,3,4,5,6];
   grid.innerHTML = "";
   order.forEach(dow=>{
     const w = WEEK.find(x=>x.dow===dow);
