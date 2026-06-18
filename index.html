@@ -327,6 +327,23 @@
   </div>
 </dialog>
 
+<!-- Modal de conflito: trocar cardápio quando já há dias marcados -->
+<dialog id="onbConfirmDialog" class="onb-dialog">
+  <div class="onb-head">
+    <span class="onb-mark">▲</span>
+    <div>
+      <h2>Trocar o cardápio?</h2>
+      <p>Você já tem dias marcados.</p>
+    </div>
+  </div>
+  <p class="onb-note">Trocar o cardápio muda as refeições — os dias antigos vão aparecer como
+     não cumpridos (os dados <b>não são apagados</b>). Quer continuar?</p>
+  <div class="onb-dialog-actions">
+    <button id="onbCfmCancel" class="onb-btn ghost">Cancelar</button>
+    <button id="onbCfmContinue" class="onb-btn primary">Continuar</button>
+  </div>
+</dialog>
+
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script src="onboarding.js"></script>

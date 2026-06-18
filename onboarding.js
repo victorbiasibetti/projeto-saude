@@ -323,51 +323,58 @@ function importFromField(){
   return applyImport(text);
 }
 
-// aplica o texto importado (parse + sanitiza + grava). Retorna true em sucesso.
+// aplica o texto importado. Retorna true (gravou), false (erro) ou "pending"
+// (abriu o modal de conflito de histórico — a decisão grava depois).
 function applyImport(text){
   const msg = $("onbImportMsg");
+  let parsed, newMeals;
   try{
     let raw;
     try{ raw = parseLooseJSON(text); }
     catch(_){ throw new Error("A resposta veio incompleta."); }
-    const parsed = sanitizeImport(raw);
-    const newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
-
-    // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
-    // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Avisa antes.
-    const hadHistory = state && state.days && Object.keys(state.days).length > 0;
-    const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
-    if(hadHistory && keysChange &&
-       !confirm("Você já tem dias marcados. Trocar o cardápio muda as refeições — os dias antigos vão aparecer como não cumpridos (os dados não são apagados). Continuar?")){
-      msg.textContent = "Import cancelado.";
-      msg.className = "onb-import-msg";
-      return false;
-    }
-
-    plan.menu = parsed.menu;
-    plan.meals = newMeals;
-
-    // treino é OPCIONAL: só substitui se a IA mandou treinos válidos; senão mantém o atual.
-    let treinoMsg = "";
-    if(parsed.workouts){
-      plan.workouts = parsed.workouts;
-      plan.week = sanitizeWeek(parsed._weekRaw, parsed.workouts);
-      treinoMsg = ` e ${parsed.workouts.length} treinos`;
-    }
-
-    savePlan();
-    if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
-    if(parsed.macros) ONB.draft.macros = parsed.macros;
-    refreshAll(); // re-aponta os espelhos e re-renderiza (mesmo se o usuário fizer "Responder depois")
-    ONB.imported = true;   // já importou esse texto — não re-importa no Concluir
-    msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados!`;
-    msg.className = "onb-import-msg ok";
-    return true;
+    parsed = sanitizeImport(raw);
+    newMeals = deriveMeals(parsed.menu); // checks diários = refeições da IA (+ Treino)
   }catch(e){
     msg.textContent = "✗ " + e.message + " Copie a resposta do Chat-GPT de novo e clique em importar.";
     msg.className = "onb-import-msg err";
     return false;
   }
+
+  // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
+  // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Confirma antes.
+  const hadHistory = state && state.days && Object.keys(state.days).length > 0;
+  const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
+  if(hadHistory && keysChange){
+    ONB.pendingImport = { parsed, newMeals };
+    $("onbConfirmDialog").showModal();
+    return "pending";
+  }
+
+  commitImport(parsed, newMeals);
+  return true;
+}
+
+// grava de fato o plano importado (dieta + treino opcional) e re-renderiza.
+function commitImport(parsed, newMeals){
+  plan.menu = parsed.menu;
+  plan.meals = newMeals;
+
+  let treinoMsg = "";
+  if(parsed.workouts){   // treino é OPCIONAL: só troca se vier válido
+    plan.workouts = parsed.workouts;
+    plan.week = sanitizeWeek(parsed._weekRaw, parsed.workouts);
+    treinoMsg = ` e ${parsed.workouts.length} treinos`;
+  }
+
+  savePlan();
+  if(parsed.targetKcal) ONB.draft.targetKcal = parsed.targetKcal;
+  if(parsed.macros) ONB.draft.macros = parsed.macros;
+  refreshAll();
+  ONB.imported = true;
+
+  const msg = $("onbImportMsg");
+  msg.textContent = `✓ ${parsed.menu.length} refeições${treinoMsg} importados!`;
+  msg.className = "onb-import-msg ok";
 }
 
 /* ===========================================================
@@ -376,11 +383,14 @@ function applyImport(text){
 function finishOnboarding(){
   // se há resposta colada e ainda não foi importada, importa antes de concluir
   const field = $("onbImport");
-  const pending = field && field.value && field.value.trim() && !ONB.imported;
-  if(pending && !applyImport(field.value)){
-    // erro na importação → abre o modal pra usuário decidir (colar de novo / encerrar)
-    $("onbDialog").showModal();
-    return;
+  const hasPending = field && field.value && field.value.trim() && !ONB.imported;
+  if(hasPending){
+    ONB.finishAfterImport = true;
+    const r = applyImport(field.value);
+    if(r === "pending") return;            // modal de conflito decide e finaliza depois
+    ONB.finishAfterImport = false;
+    if(r === false){ $("onbDialog").showModal(); return; }  // erro de import → modal
+    // r === true → import ok, segue pro finalize
   }
   finalizeOnboarding();
 }
@@ -528,6 +538,21 @@ function wireOnboarding(){
   // modal de erro de import no Concluir
   $("onbDlgRetry").addEventListener("click", ()=>{ $("onbDialog").close(); $("onbImport").focus(); });
   $("onbDlgFinish").addEventListener("click", ()=>{ $("onbDialog").close(); finalizeOnboarding(); });
+
+  // modal de conflito (trocar cardápio com histórico)
+  $("onbCfmContinue").addEventListener("click", ()=>{
+    $("onbConfirmDialog").close();
+    const p = ONB.pendingImport; ONB.pendingImport = null;
+    if(p) commitImport(p.parsed, p.newMeals);
+    if(ONB.finishAfterImport){ ONB.finishAfterImport = false; finalizeOnboarding(); }
+  });
+  $("onbCfmCancel").addEventListener("click", ()=>{
+    $("onbConfirmDialog").close();
+    ONB.pendingImport = null; ONB.finishAfterImport = false;
+    const msg = $("onbImportMsg");
+    msg.textContent = "Importação cancelada.";
+    msg.className = "onb-import-msg";
+  });
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);
