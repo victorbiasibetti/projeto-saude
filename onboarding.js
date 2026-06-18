@@ -15,8 +15,10 @@
 const ONB = {
   step: 1,
   total: 4,
-  draft: {},        // respostas acumuladas
-  imported: false,  // true quando o texto atual do campo já foi importado com sucesso
+  draft: {},               // respostas acumuladas
+  imported: false,         // true quando o texto atual do campo já foi importado com sucesso
+  pendingImport: null,     // dados aguardando confirmação no modal de conflito
+  finishAfterImport: false,// veio do "Concluir": finaliza o onboarding após o import
 };
 
 // flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
@@ -377,6 +379,15 @@ function commitImport(parsed, newMeals){
   msg.className = "onb-import-msg ok";
 }
 
+// aborta o import pendente do modal de conflito (botão Cancelar ou ESC)
+function cancelPendingImport(){
+  ONB.pendingImport = null;
+  ONB.finishAfterImport = false;
+  const msg = $("onbImportMsg");
+  msg.textContent = "Importação cancelada.";
+  msg.className = "onb-import-msg";
+}
+
 /* ===========================================================
    FINALIZAR / PULAR
    =========================================================== */
@@ -538,6 +549,8 @@ function wireOnboarding(){
   // modal de erro de import no Concluir
   $("onbDlgRetry").addEventListener("click", ()=>{ $("onbDialog").close(); $("onbImport").focus(); });
   $("onbDlgFinish").addEventListener("click", ()=>{ $("onbDialog").close(); finalizeOnboarding(); });
+  // ESC no modal de erro = "colar de novo" (não finaliza)
+  $("onbDialog").addEventListener("cancel", ()=>{ ONB.finishAfterImport = false; });
 
   // modal de conflito (trocar cardápio com histórico)
   $("onbCfmContinue").addEventListener("click", ()=>{
@@ -548,11 +561,10 @@ function wireOnboarding(){
   });
   $("onbCfmCancel").addEventListener("click", ()=>{
     $("onbConfirmDialog").close();
-    ONB.pendingImport = null; ONB.finishAfterImport = false;
-    const msg = $("onbImportMsg");
-    msg.textContent = "Importação cancelada.";
-    msg.className = "onb-import-msg";
+    cancelPendingImport();
   });
+  // ESC no modal de conflito = Cancelar (só dispara em dismiss, não no close() dos botões)
+  $("onbConfirmDialog").addEventListener("cancel", cancelPendingImport);
 
   // export / import geral (footer)
   $("exportBtn").addEventListener("click", exportAll);
