@@ -3,7 +3,7 @@
    -----------------------------------------------------------
    Este arquivo NÃO é mais a fonte de verdade em runtime.
    É só o TEMPLATE inicial: na 1ª carga, o app copia isto pro
-   localStorage (chave projeto_enterrada_plan_v1) e passa a ler
+   localStorage (chave projeto_saude_plan_v1) e passa a ler
    de lá. Assim cada pessoa tem o próprio plano editável no
    navegador dela. Mexer aqui só muda o padrão de quem ainda
    não tem plano salvo (ou após "Restaurar plano padrão").
@@ -13,70 +13,105 @@
 
 const DEFAULT_PLAN = {
   // versão do formato do plano. v2 = treino sem fases (divisão semanal + set único).
-  version: 2,
+  // v3 = refeições com itens marcáveis individualmente ({id,text,kcal}).
+  version: 3,
 
-  // Refeições que viram checkbox a cada dia
+  // Refeições que viram checkbox a cada dia. Cada refeição lista seus `items`
+  // ({id, text, kcal}) marcáveis individualmente. Refeição sem itens (creatina,
+  // treino) = check único. `kcal` (string) é só o rótulo de referência do card.
   meals: [
-    { key: "cafe",     icon: "☕", label: "Café",            kcal: "~720 kcal" },
-    { key: "almoco",   icon: "🍽️", label: "Almoço",          kcal: "~1.080 kcal" },
-    { key: "lanche",   icon: "🥤", label: "Lanche da tarde",  kcal: "~300 kcal" },
-    { key: "janta",    icon: "🌙", label: "Janta",            kcal: "~810 kcal" },
-    { key: "creatina", icon: "💊", label: "Creatina 5 g",     kcal: "todo dia" },
-    { key: "treino",   icon: "🏋️", label: "Treino",           kcal: "" },
+    {
+      key: "cafe", icon: "☕", label: "Café", kcal: "~720 kcal",
+      items: [
+        { id: "cafe_0", text: "4 ovos cozidos ou fritos (pouco óleo)",            kcal: 280 },
+        { id: "cafe_1", text: "4 fatias de pão francês (ou 2 pães) c/ manteiga",  kcal: 320 },
+        { id: "cafe_2", text: "1 banana",                                          kcal: 90 },
+        { id: "cafe_3", text: "Café ou suco (sem leite in natura)",                kcal: 30 },
+      ],
+    },
+    {
+      key: "almoco", icon: "🍽️", label: "Almoço", kcal: "~1.080 kcal",
+      items: [
+        { id: "almoco_0", text: "180 g de carne (patinho, coxão, acém ou frango)", kcal: 330 },
+        { id: "almoco_1", text: "5-6 colheres de arroz (150 g cozido)",            kcal: 210 },
+        { id: "almoco_2", text: "1 concha cheia de feijão (140 g)",                kcal: 150 },
+        { id: "almoco_3", text: "2 batatas médias cozidas (ou 4 col. purê)",       kcal: 200 },
+        { id: "almoco_4", text: "Salada à vontade + 1 col. de azeite",             kcal: 190 },
+      ],
+    },
+    {
+      key: "lanche", icon: "🥤", label: "Lanche da tarde", kcal: "~300 kcal",
+      items: [
+        { id: "lanche_0", text: "1 scoop de whey batido com 250 ml de leite",  kcal: 300 },
+        { id: "lanche_1", text: "OU achocolatado: leite + 2 col. (menos prot.)", kcal: 0 },
+        { id: "lanche_2", text: "Bate com banana ou aveia se quiser mais carbo", kcal: 0 },
+      ],
+    },
+    {
+      key: "janta", icon: "🌙", label: "Janta", kcal: "~810 kcal",
+      items: [
+        { id: "janta_0", text: "150 g de frango ou carne moída",            kcal: 250 },
+        { id: "janta_1", text: "4-5 colheres de arroz (120 g cozido)",      kcal: 160 },
+        { id: "janta_2", text: "1 concha de feijão",                        kcal: 140 },
+        { id: "janta_3", text: "Legume refogado (pouco óleo)",              kcal: 80 },
+        { id: "janta_4", text: "Salada",                                    kcal: 180 },
+      ],
+    },
+    { key: "creatina", icon: "💊", label: "Creatina 5 g", kcal: "todo dia", items: [], single: true },
+    { key: "treino",   icon: "🏋️", label: "Treino",        kcal: "",         items: [], single: true },
   ],
 
-  // Cardápio de referência (cards)
+  // Cardápio de referência (cards). Mesmos itens das refeições + um card de
+  // regras/suplementos que NÃO vira refeição marcável.
   menu: [
     {
       title: "Café", icon: "☕", accent: "azul",
       kcal: "~720 kcal · 42 P / 92 C / 22 G",
       items: [
-        "4 ovos cozidos ou fritos (pouco óleo)",
-        "4 fatias de pão francês (ou 2 pães) c/ fio de manteiga",
-        "1 banana",
-        "Café ou suco (sem leite in natura)",
+        { id: "cafe_0", text: "4 ovos cozidos ou fritos (pouco óleo)",            kcal: 280 },
+        { id: "cafe_1", text: "4 fatias de pão francês (ou 2 pães) c/ manteiga",  kcal: 320 },
+        { id: "cafe_2", text: "1 banana",                                          kcal: 90 },
+        { id: "cafe_3", text: "Café ou suco (sem leite in natura)",                kcal: 30 },
       ],
     },
     {
       title: "Almoço", icon: "🍽️", accent: "verde",
       kcal: "~1.080 kcal · 65 P / 140 C / 31 G",
       items: [
-        "180 g de carne (patinho, coxão, acém moído ou frango)",
-        "5-6 colheres de arroz (150 g cozido)",
-        "1 concha cheia de feijão (140 g)",
-        "2 batatas médias cozidas ou 4 col. purê (ou mandioca)",
-        "Salada à vontade + 1 col. de azeite",
+        { id: "almoco_0", text: "180 g de carne (patinho, coxão, acém ou frango)", kcal: 330 },
+        { id: "almoco_1", text: "5-6 colheres de arroz (150 g cozido)",            kcal: 210 },
+        { id: "almoco_2", text: "1 concha cheia de feijão (140 g)",                kcal: 150 },
+        { id: "almoco_3", text: "2 batatas médias cozidas (ou 4 col. purê)",       kcal: 200 },
+        { id: "almoco_4", text: "Salada à vontade + 1 col. de azeite",             kcal: 190 },
       ],
     },
     {
       title: "Lanche da tarde", icon: "🥤", accent: "roxo",
       kcal: "~300 kcal · 30 P / 35 C / 5 G",
       items: [
-        "1 scoop de whey batido com 250 ml de leite",
-        "OU achocolatado: leite + 2 col. (menos proteína)",
-        "Bate com banana ou aveia se quiser mais carbo",
-        "Leite batido com whey costuma cair melhor que in natura",
+        { id: "lanche_0", text: "1 scoop de whey batido com 250 ml de leite",  kcal: 300 },
+        { id: "lanche_1", text: "OU achocolatado: leite + 2 col. (menos prot.)", kcal: 0 },
+        { id: "lanche_2", text: "Bate com banana ou aveia se quiser mais carbo", kcal: 0 },
       ],
     },
     {
       title: "Janta", icon: "🌙", accent: "laranja",
       kcal: "~810 kcal · 50 P / 100 C / 22 G",
       items: [
-        "150 g de frango ou carne moída",
-        "4-5 colheres de arroz (120 g cozido)",
-        "1 concha de feijão",
-        "Legume refogado (abobrinha, brócolis, chuchu) pouco óleo",
-        "Salada",
+        { id: "janta_0", text: "150 g de frango ou carne moída",            kcal: 250 },
+        { id: "janta_1", text: "4-5 colheres de arroz (120 g cozido)",      kcal: 160 },
+        { id: "janta_2", text: "1 concha de feijão",                        kcal: 140 },
+        { id: "janta_3", text: "Legume refogado (pouco óleo)",              kcal: 80 },
+        { id: "janta_4", text: "Salada",                                    kcal: 180 },
       ],
     },
     {
       title: "Suplementos & regras", icon: "💊", accent: "cinza",
       kcal: "",
       items: [
-        "Creatina 5 g — TODO dia, qualquer hora (até dia sem treino)",
-        "Whey — já está no lanche da tarde",
-        "Dia SEM treino: tira 1 batata do almoço + 1 col. arroz da janta",
-        "Dia de cerveja: corta carbo (pão/batata/arroz da noite)",
+        { id: "regras_0", text: "Creatina 5 g — TODO dia, qualquer hora (até dia sem treino)", kcal: 0 },
+        { id: "regras_1", text: "Whey — já está no lanche da tarde",                            kcal: 0 },
+        { id: "regras_2", text: "Dia SEM treino: tira 1 batata do almoço + 1 col. arroz",       kcal: 0 },
       ],
     },
   ],

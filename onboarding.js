@@ -22,13 +22,13 @@ const ONB = {
 };
 
 // flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
-const DEFER_KEY = "projeto_enterrada_defer_v1";
+const DEFER_KEY = "projeto_saude_defer_v1";
 
 const PROJECT_SUGGESTIONS = [
   "Projeto -5kg",
   "Projeto Verão",
   "Esse ano o shape vem!",
-  "Projeto Enterrada",
+  "Projeto Saúde",
   "Operação Definição",
   "Mais forte que ontem",
 ];
@@ -170,7 +170,8 @@ function buildPrompt(){
 `  "targetKcal": ${d.targetKcal},`,
 `  "macros": "<P>g P / <C>g C / <G>g G",`,
 `  "menu": [`,
-`    { "title": "Café", "icon": "☕", "accent": "azul", "kcal": "~700 kcal · 40 P / 80 C / 20 G", "items": ["alimento 1 com quantidade", "alimento 2 com quantidade"] }`,
+`    { "title": "Café", "icon": "☕", "accent": "azul", "kcal": "~700 kcal · 40 P / 80 C / 20 G",`,
+`      "items": [ { "text": "alimento 1 com quantidade", "kcal": 280 }, { "text": "alimento 2 com quantidade", "kcal": 90 } ] }`,
 `  ],`,
 `  "workouts": [`,
 `    { "id": "A", "accent": "azul", "titulo": "Treino A — Peito/Ombro/Tríceps", "sub": "frase curta",`,
@@ -186,7 +187,8 @@ function buildPrompt(){
 `- "accent" só pode ser: azul, verde, laranja, roxo, cinza (varie entre as refeições).`,
 `- Crie de 4 a 6 refeições (café, almoço, lanche, janta e opcionalmente ceia/pré-treino).`,
 `- A soma das kcal das refeições deve ficar perto de ${d.targetKcal} kcal.`,
-`- Cada "items" lista alimentos com quantidades, usando comida comum no Brasil.`,
+`- Cada "items" lista alimentos com quantidades (comida comum no Brasil) e a "kcal" (número inteiro) de CADA item.`,
+`- A soma das kcal dos itens de uma refeição deve bater com a kcal total daquela refeição.`,
 ``,
 `REGRAS TREINO`,
 `- Crie exatamente ${dias} treinos em "workouts" (um por dia de treino), id A, B, C... em ordem.`,
@@ -201,12 +203,9 @@ function buildPrompt(){
 /* ---------- import do JSON gerado pela IA ---------- */
 const ACCENTS = ["azul","verde","laranja","roxo","cinza"];
 
-// gera chave segura (sem acento/espaço) a partir do título da refeição
-function slugify(s){
-  return String(s).toLowerCase()
-    .normalize("NFD").replace(/[̀-ͯ]/g,"")   // tira acentos
-    .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"") || "ref";
-}
+// gera chave segura (sem acento/espaço) a partir do título da refeição.
+// Reusa planSlug (app.js) pra não divergir do slug usado na migração/ids.
+function slugify(s){ return planSlug(s) || "ref"; }
 // 1ª parte da string de kcal (antes do "·"), ex: "~700 kcal · 40 P..." → "~700 kcal"
 function shortKcal(k){ return (typeof k === "string" ? k.split("·")[0].trim() : ""); }
 
@@ -217,11 +216,13 @@ function deriveMeals(menu){
     let key = slugify(c.title);
     while(used.has(key)) key += "_"; // garante unicidade
     used.add(key);
-    return { key, icon: c.icon || "🍽️", label: c.title, kcal: shortKcal(c.kcal) };
+    // itens marcáveis da refeição, com id estável prefixado pela key da refeição
+    const items = (c.items||[]).map((it,i)=> normItem(it, key, i));
+    return { key, icon: c.icon || "🍽️", label: c.title, kcal: shortKcal(c.kcal), items };
   });
-  // a aba Treino e o "dia 100%" dependem deste check — sempre presente
+  // a aba Treino e o "dia 100%" dependem deste check — sempre presente, ritual (sem itens)
   if(!used.has("treino"))
-    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"" });
+    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"", items:[], single:true });
   return meals;
 }
 
@@ -242,14 +243,21 @@ function sanitizeImport(obj){
   const menu = obj.menu.map((c, i)=>{
     if(!c || typeof c.title !== "string" || !Array.isArray(c.items))
       throw new Error("Uma refeição veio incompleta (faltou nome ou itens).");
+    const base = slugify(c.title);
+    // mesma normalização de item usada na migração (normItem, app.js): {id,text,kcal}
+    const items = c.items.map((x, j)=> normItem(x, base, j))
+                         .filter(it=> it.text.trim())
+                         .slice(0,12);
     return {
       title: String(c.title).slice(0,60),
       icon: typeof c.icon === "string" && c.icon ? c.icon : "🍽️",
       accent: ACCENTS.includes(c.accent) ? c.accent : ACCENTS[i % ACCENTS.length],
       kcal: typeof c.kcal === "string" ? c.kcal : "",
-      items: c.items.map(x=> String(x)).filter(Boolean).slice(0,12),
+      items,
     };
-  });
+  }).filter(c=> c.items.length > 0); // descarta refeição sem itens (evitar virar check ritual)
+  if(menu.length === 0)
+    throw new Error("Nenhuma refeição com itens. Confira se copiou a resposta inteira.");
   return {
     menu,
     targetKcal: Number(obj.targetKcal) || null,
@@ -342,11 +350,13 @@ function applyImport(text){
     return false;
   }
 
-  // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
-  // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Confirma antes.
+  // se já existe histórico e as refeições OU seus itens mudam, os checks antigos passam a
+  // aparecer como não cumpridos (o dado não some, fica órfão sob as keys/ids antigos). Confirma
+  // antes. Assinatura inclui ids de item — re-importar trocando itens também avisa.
+  const sig = ms => (ms||[]).map(m=> m.key+":"+(m.items||[]).map(it=>it.id).join("|")).join(",");
   const hadHistory = state && state.days && Object.keys(state.days).length > 0;
-  const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
-  if(hadHistory && keysChange){
+  const planChange = sig(plan.meals) !== sig(newMeals);
+  if(hadHistory && planChange){
     ONB.pendingImport = { parsed, newMeals };
     $("onbConfirmDialog").showModal();
     return "pending";
@@ -411,7 +421,7 @@ function finalizeOnboarding(){
   const d = ONB.draft;
   user = {
     name: d.name || "",
-    project: d.project || "Projeto Enterrada",
+    project: d.project || "Projeto Saúde",
     height: d.height || null,
     weight: d.weight || null,
     age: d.age || null,
@@ -483,7 +493,7 @@ function closeOnboarding(){
    =========================================================== */
 function exportAll(){
   const payload = {
-    app: "projeto-enterrada",
+    app: "projeto-saude",
     version: 1,
     exportedAt: new Date().toISOString(),
     user: user,
@@ -493,7 +503,7 @@ function exportAll(){
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type:"application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const slug = (user && user.project ? user.project : "projeto-enterrada")
+  const slug = (user && user.project ? user.project : "projeto-saude")
     .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   a.href = url;
   a.download = slug + "-backup.json";
@@ -506,7 +516,7 @@ function importAll(file){
   reader.onload = ()=>{
     try{
       const data = JSON.parse(reader.result);
-      if(data.app && data.app !== "projeto-enterrada")
+      if(data.app && data.app !== "projeto-saude" && data.app !== "projeto-enterrada")
         throw new Error("Arquivo de outro app.");
       if(data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
       if(data.plan) localStorage.setItem(PLAN_KEY, JSON.stringify(data.plan));

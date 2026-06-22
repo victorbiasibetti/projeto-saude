@@ -3,9 +3,28 @@
    =========================================================== */
 "use strict";
 
-const STORE_KEY = "projeto_enterrada_v1";       // dados do usuário (checks/cerveja)
-const PLAN_KEY  = "projeto_enterrada_plan_v1";  // conteúdo dieta+treino (editável por pessoa)
-const USER_KEY  = "projeto_enterrada_user_v1";  // perfil (nome, projeto, medidas, BMR/TDEE)
+const STORE_KEY = "projeto_saude_v1";       // dados do usuário (checks dos dias)
+const PLAN_KEY  = "projeto_saude_plan_v1";  // conteúdo dieta+treino (editável por pessoa)
+const USER_KEY  = "projeto_saude_user_v1";  // perfil (nome, projeto, medidas, BMR/TDEE)
+
+// migração das chaves antigas (projeto_enterrada_*) → projeto_saude_*. Copia o valor
+// pra chave nova quando ela ainda não existe e remove a antiga. Idempotente.
+(function migrateStorageKeys(){
+  const pairs = [
+    ["projeto_enterrada_v1",       STORE_KEY],
+    ["projeto_enterrada_plan_v1",  PLAN_KEY],
+    ["projeto_enterrada_user_v1",  USER_KEY],
+    ["projeto_enterrada_defer_v1", "projeto_saude_defer_v1"],
+  ];
+  try{
+    pairs.forEach(([oldK,newK])=>{
+      const v = localStorage.getItem(oldK);
+      if(v === null) return;
+      if(localStorage.getItem(newK) === null) localStorage.setItem(newK, v);
+      localStorage.removeItem(oldK);
+    });
+  }catch(e){}
+})();
 const WD = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const MES_NOME = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
                   "Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -18,7 +37,7 @@ let plan = loadPlan();
 
 // Espelhos das seções do plano (mantêm os nomes que o resto do código já usa).
 // São derivados de `plan`; se o plano mudar, chame syncPlanRefs() + re-render.
-let MEALS, MENU, WEEK, WORKOUTS;
+let MEALS, WEEK, WORKOUTS;
 syncPlanRefs();
 
 function loadPlan(){
@@ -34,21 +53,74 @@ function loadPlan(){
 }
 // valida o mínimo pra não quebrar o render se o JSON salvo estiver corrompido/antigo
 function isValidPlan(p){
-  return p && p.version === 2
+  return p && p.version === 3
            && Array.isArray(p.meals) && Array.isArray(p.menu)
            && Array.isArray(p.week) && Array.isArray(p.workouts);
 }
-// migra plano antigo (v1: treino em 3 fases) pro v2 (sem fases). Preserva a DIETA
-// (menu/meals); só o treino é reescrito pro novo default. Idempotente.
+// migra plano antigo pro formato atual (v3). Idempotente. Preserva o que dá.
+//   v1 (treino em 3 fases) → v2: reescreve só o treino, mantém a dieta.
+//   v2 → v3: itens de refeição viram {id,text,kcal} e cada meal ganha seus items.
 function migratePlan(p){
-  if(!p || p.version === 2) return p;
-  p.version = 2;
-  p.workouts = JSON.parse(JSON.stringify(DEFAULT_PLAN.workouts));
-  p.week = JSON.parse(JSON.stringify(DEFAULT_PLAN.week));
-  delete p.phases;
-  delete p.cicloInicio;
-  try{ localStorage.setItem(PLAN_KEY, JSON.stringify(p)); }catch(e){}
+  if(!p) return p;
+  let changed = false;
+  if(p.version !== 2 && p.version !== 3){
+    p.version = 2;
+    p.workouts = JSON.parse(JSON.stringify(DEFAULT_PLAN.workouts));
+    p.week = JSON.parse(JSON.stringify(DEFAULT_PLAN.week));
+    delete p.phases;
+    delete p.cicloInicio;
+    changed = true;
+  }
+  if(p.version === 2){
+    p.version = 3;
+    migrateItemsV3(p);
+    changed = true;
+  }
+  if(changed){ try{ localStorage.setItem(PLAN_KEY, JSON.stringify(p)); }catch(e){} }
   return p;
+}
+// v2→v3: itens string → {id,text,kcal}; meals herdam os itens do card de mesmo título.
+// Como a v2 não tinha kcal por item, semeia distribuindo a kcal do rótulo da refeição
+// entre os itens (senão o anel de kcal ficaria zerado pra quem já tinha plano).
+function migrateItemsV3(p){
+  (p.menu||[]).forEach(card=>{
+    const base = planSlug(card.title) || "ref";
+    card.items = (card.items||[]).map((it,i)=> normItem(it, base, i));
+    seedItemKcal(card.items, mealKcal(card.kcal));
+  });
+  const byTitle = {};
+  (p.menu||[]).forEach(c=> byTitle[planSlug(c.title)] = c.items);
+  (p.meals||[]).forEach(m=>{
+    if(!Array.isArray(m.items)){                 // ainda não migrado
+      const match = byTitle[planSlug(m.label)];
+      m.items = match ? JSON.parse(JSON.stringify(match)) : [];
+      if(!m.items.length) seedItemKcal(m.items, 0); // no-op, mantém forma
+      else seedItemKcal(m.items, mealKcal(m.kcal));
+    }
+    // refeições rituais conhecidas viram check único explícito
+    if(m.single === undefined && (m.key === "creatina" || m.key === "treino")) m.single = true;
+  });
+}
+// se todos os itens estão com kcal 0 e há um total (rótulo), distribui igualmente entre eles.
+function seedItemKcal(items, total){
+  if(!items.length || total <= 0) return;
+  if(items.some(it=> itemKcal(it) > 0)) return;   // já tem kcal real, não mexe
+  const per = Math.round(total / items.length);
+  items.forEach((it,i)=>{ it.kcal = (i === items.length-1) ? (total - per*(items.length-1)) : per; });
+}
+// chave segura a partir de um texto (sem acento/espaço). Usada na migração e nos ids.
+function planSlug(s){
+  return String(s||"").toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+}
+// normaliza um item de refeição (string legada OU objeto) → {id,text,kcal}.
+// Regra única usada pela migração E pelo import (texto até 80 chars, kcal >= 0).
+function normItem(it, base, i){
+  const isObj = it && typeof it === "object";
+  const text = String(isObj ? (it.text||"") : it).slice(0,80);
+  const kcal = isObj ? (Math.max(0, parseInt(it.kcal,10)) || 0) : 0;
+  return { id: (isObj && it.id) ? it.id : (base+"_"+i), text, kcal };
 }
 // copia (deep clone) o template pro localStorage e devolve
 function seedPlan(){
@@ -63,7 +135,6 @@ function savePlan(){
 // re-aponta os espelhos pro plano atual (chamar após editar/restaurar o plano)
 function syncPlanRefs(){
   MEALS = plan.meals;
-  MENU = plan.menu;
   WEEK = plan.week;
   WORKOUTS = plan.workouts;
 }
@@ -111,12 +182,13 @@ function applyUser(){
 function refreshAll(){
   syncPlanRefs();
   applyUser();
-  renderDay(); renderMenu(); renderMonth(); renderLegend();
+  renderDay(); renderMonth(); renderLegend();
   renderWeek(); renderWorkouts();
 }
 
-/* ---------- estado do usuário (checks/cerveja) ---------- */
+/* ---------- estado do usuário (checks dos dias) ---------- */
 let state = load();
+migrateDays();                 // normaliza registros legados (bool) uma vez, no load
 let viewYear, viewMonth;       // mês exibido na tabela
 let selectedKey = todayKey();  // dia sendo editado no painel do topo (padrão: hoje)
 
@@ -125,15 +197,14 @@ function load(){
     const raw = localStorage.getItem(STORE_KEY);
     return normalizeState(raw ? JSON.parse(raw) : null);
   }catch(e){
-    return { days:{}, beer:{} };
+    return { days:{} };
   }
 }
-// garante a forma { days:{}, beer:{} } mesmo se vier JSON válido com shape errado
+// garante a forma { days:{} } mesmo se vier JSON válido com shape errado
 // (ex.: arquivo importado/editado à mão) — senão o render quebra em state.days[...]
 function normalizeState(s){
-  if(!s || typeof s !== "object") return { days:{}, beer:{} };
+  if(!s || typeof s !== "object") return { days:{} };
   if(!s.days || typeof s.days !== "object") s.days = {};
-  if(!s.beer || typeof s.beer !== "object") s.beer = {};
   return s;
 }
 function save(){
@@ -153,6 +224,144 @@ function keyToDate(key){
 function dayRec(key){
   if(!state.days[key]) state.days[key] = {};
   return state.days[key];
+}
+
+// escapa texto pra interpolar em innerHTML (itens vêm da IA / do usuário).
+function escapeHtml(s){
+  return String(s==null?"":s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+// kcal de um item/avulso, tolerante a string/null/negativo. Regra única.
+function itemKcal(x){ const n = Number(x && x.kcal); return n > 0 ? n : 0; }
+
+/* ---------- item logado num dia (SNAPSHOT / diário) ----------
+   e.items[id] = { k:<kcal>, t:<texto> } congelados no dia em que foi marcado.
+   Presença da chave = marcado (resolve item de 0 kcal). Valor `true` = formato legado
+   (cai no fallback da kcal do plano até ser re-marcado / backfillado no load). */
+function snapKcal(v){ return (v && typeof v === "object") ? (Number(v.k)||0) : 0; }
+function snapText(v, fallback){ return (v && typeof v === "object" && v.t) ? v.t : fallback; }
+function itemOn(e, it){ return Object.prototype.hasOwnProperty.call(e.items, it.id); }
+function loggedKcal(e, it){
+  const v = e.items[it.id];
+  return (v && typeof v === "object") ? snapKcal(v) : itemKcal(it); // legado (true) → kcal do plano
+}
+function checkItem(e, it){ e.items[it.id] = { k: itemKcal(it), t: it.text }; }
+function toggleItem(e, it){
+  if(itemOn(e, it)) delete e.items[it.id];
+  else checkItem(e, it);
+}
+
+// refeição "ritual" = check único, sem itens (ex.: creatina, treino). Usa a flag
+// `single` quando presente; senão cai no nº de itens (compat com planos já salvos).
+function isSingle(m){
+  return m.single === true || (m.single === undefined && !(m.items && m.items.length));
+}
+
+/* ---------- forma normalizada de um registro de refeição ----------
+   state.days[data][mealKey] = { items:{ id:{k,t} }, extra:[{id,text,kcal}], done:bool }.
+   items[id] = snapshot {k:kcal, t:texto} congelado no dia (presença da chave = marcado).
+   Legado: o valor da refeição era booleano, ou items[id] era `true` (kcal cai no plano).
+   entryView = versão PURA (não grava) p/ cálculo em render read-only.
+   mealEntry = grava o objeto normalizado de volta em `rec` (caminhos de mutação). */
+function entryView(rec, meal){
+  const raw = rec[meal.key];
+  if(raw === true){
+    return isSingle(meal)
+      ? { items:{}, extra:[], done:true }
+      : { items: Object.fromEntries((meal.items||[]).map(it=>[it.id, { k: itemKcal(it), t: it.text }])), extra:[], done:true };
+  }
+  if(!raw || typeof raw !== "object") return { items:{}, extra:[], done:false };
+  return {
+    items: (raw.items && typeof raw.items === "object") ? raw.items : {},
+    extra: Array.isArray(raw.extra) ? raw.extra : [],
+    done: raw.done === true,
+  };
+}
+function mealEntry(rec, meal){
+  let e = rec[meal.key];
+  if(!e || typeof e !== "object"){
+    e = entryView(rec, meal);
+  } else {
+    if(!e.items || typeof e.items !== "object") e.items = {};
+    if(!Array.isArray(e.extra)) e.extra = [];
+    if(typeof e.done !== "boolean") e.done = false;
+  }
+  rec[meal.key] = e;
+  return e;
+}
+
+// normaliza UMA vez no load os registros legados (bool) já salvos — assim o render
+// não precisa mutar o state. Só toca refeições que já têm entrada no dia (sem inflar).
+function migrateDays(){
+  let changed = false;
+  for(const key in state.days){
+    const rec = state.days[key];
+    if(!rec || typeof rec !== "object") continue;
+    MEALS.forEach(m=>{
+      const raw = rec[m.key];
+      if(raw === undefined) return;
+      const wasLegacy = (raw === true) || (typeof raw !== "object"); // valor que precisa converter
+      const e = mealEntry(rec, m);
+      let touched = wasLegacy;
+      // backfill: checks antigos (id:true) viram snapshot {k,t} com kcal/texto do plano
+      (m.items||[]).forEach(it=>{
+        if(e.items[it.id] === true){ e.items[it.id] = { k: itemKcal(it), t: it.text }; touched = true; }
+      });
+      if(touched) changed = true;   // só re-salva se algo legado foi de fato convertido
+    });
+  }
+  if(changed) save();
+}
+
+// got/total/kcal de uma refeição num dia — REGRA ÚNICA (painel, tabela e anéis).
+// kcal lê o snapshot logado (não o plano); órfãos (itens removidos do plano) somam kcal mas
+// não entram em got/total/%. A LISTA de órfãos só é montada quando `wantOrphan` (painel) —
+// a tabela do mês não precisa, evita alocação por célula.
+function mealStats(e, meal, wantOrphan){
+  const items = meal.items || [];
+  if(isSingle(meal)){
+    return { items, got: e.done?1:0, total:1, kcal: e.done ? mealKcal(meal.kcal) : 0, orphan: [] };
+  }
+  let got = 0, kcal = 0;
+  items.forEach(it=>{ if(itemOn(e, it)){ got++; kcal += loggedKcal(e, it); } });
+  const planIds = new Set(items.map(it=>it.id));
+  const orphan = [];
+  Object.keys(e.items).forEach(id=>{
+    if(planIds.has(id)) return;
+    const ok = snapKcal(e.items[id]);
+    kcal += ok;                                   // órfão soma kcal
+    if(wantOrphan) orphan.push({ id, text: snapText(e.items[id], "(item removido)"), kcal: ok });
+  });
+  return { items, got, total: items.length, kcal, orphan };
+}
+// kcal planejada total de uma refeição (somatório dos itens, ou rótulo se ritual).
+function mealPlanKcal(meal){
+  const items = meal.items || [];
+  return items.length ? items.reduce((s,it)=> s + itemKcal(it), 0) : mealKcal(meal.kcal);
+}
+
+/* ---------- fonte ÚNICA de cálculo do dia (usada pelo painel e pela tabela) ----------
+   % do dia = itens marcados / itens planejados (refeição ritual = 1 unidade).
+   Itens avulsos (extra) somam kcal mas NÃO entram no %  — são bônus, não aderência. */
+function dayProgress(key){
+  const rec = state.days[key] || {};
+  let totalUnits = 0, gotUnits = 0, kcalGot = 0, kcalPlan = 0;
+  const perMeal = {};
+  MEALS.forEach(m=>{
+    const e  = entryView(rec, m);                 // PURO: não suja o state durante render
+    const st = mealStats(e, m);
+    totalUnits += st.total;
+    gotUnits   += st.got;
+    kcalGot    += st.kcal;
+    kcalPlan   += mealPlanKcal(m);
+    kcalGot    += e.extra.reduce((s,x)=> s + itemKcal(x), 0); // avulsos: só kcal
+    perMeal[m.key] = { got: st.got, total: st.total };
+  });
+  const pct = totalUnits ? Math.round(gotUnits/totalUnits*100) : 0;
+  const kcalDenom = (user && user.targetKcal) ? user.targetKcal : (kcalPlan || 1);
+  return { totalUnits, gotUnits, pct, kcalGot, kcalDenom, perMeal };
 }
 
 /* ===========================================================
@@ -199,45 +408,164 @@ function renderDay(){
       ? "Treino " + wk.tag + (wk.nome ? " · " + wk.nome : "") + ". Marque as refeições cumpridas " + quando + "."
       : "Dia de descanso. Marque as refeições cumpridas " + quando + ".";
 
-  // checks
+  // checks — refeições COM itens viram os cards do "Cardápio de referência";
+  // refeições SEM itens (creatina, treino) ficam na seção de extras logo após o resumo.
   const wrap = document.getElementById("todayChecks");
-  wrap.innerHTML = "";
+  const extras = document.getElementById("dayExtras");
+  wrap.innerHTML = ""; extras.innerHTML = "";
   MEALS.forEach(m=>{
-    const done = !!rec[m.key];
-    const el = document.createElement("div");
-    el.className = "check" + (done?" done":"");
-    el.innerHTML =
-      `<span class="box"></span>
-       <span class="ic">${m.icon}</span>
-       <span class="meta"><b>${m.label}</b>${m.kcal?`<small>${m.kcal}</small>`:""}</span>`;
-    el.addEventListener("click", ()=>{
-      rec[m.key] = !rec[m.key];
-      save(); renderDay(); renderMonth(); // reflete na tabela
-    });
-    wrap.appendChild(el);
+    const target = isSingle(m) ? extras : wrap;
+    target.appendChild(renderMealBlock(rec, m));
   });
 
-  // cerveja do dia selecionado
-  document.getElementById("beerInput").value = state.beer[key] || "";
-
-  // anel de progresso
-  const total = MEALS.length;
-  const got = MEALS.filter(m=>rec[m.key]).length;
-  const pct = Math.round(got/total*100);
+  // anéis de progresso (% dos itens + kcal ingeridas), via fonte única
+  const prog = dayProgress(key);
   const circ = 2*Math.PI*52;
-  document.getElementById("ringFg").style.strokeDashoffset = circ*(1-got/total);
-  document.getElementById("dayPct").textContent = pct+"%";
+  document.getElementById("ringFg").style.strokeDashoffset =
+    circ * (1 - (prog.totalUnits ? prog.gotUnits/prog.totalUnits : 0));
+  document.getElementById("dayPct").textContent = prog.pct + "%";
 
-  // anel de kcal ingeridas = soma das kcal das refeições marcadas
-  const kcalGot = MEALS.filter(m=>rec[m.key]).reduce((s,m)=> s + mealKcal(m.kcal), 0);
-  // denominador do anel: meta do perfil, senão o total de kcal do cardápio do dia
-  const kcalTotal = MEALS.reduce((s,m)=> s + mealKcal(m.kcal), 0);
-  const denom = (user && user.targetKcal) ? user.targetKcal : (kcalTotal || 1);
-  const frac = Math.min(1, kcalGot/denom);
+  const frac = Math.min(1, prog.kcalGot / prog.kcalDenom);
   document.getElementById("kcalRingFg").style.strokeDashoffset = circ*(1-frac);
-  document.getElementById("dayKcal").textContent = kcalGot.toLocaleString("pt-BR");
-  // total de referência logo abaixo (meta ou total do cardápio do dia)
-  document.getElementById("dayKcalSub").textContent = "/ " + denom.toLocaleString("pt-BR");
+  document.getElementById("dayKcal").textContent = prog.kcalGot.toLocaleString("pt-BR");
+  document.getElementById("dayKcalSub").textContent = "/ " + prog.kcalDenom.toLocaleString("pt-BR");
+}
+
+// monta o bloco de uma refeição: cabeçalho + itens marcáveis + avulsos + "comi mais".
+// Refeição sem itens (creatina, treino) = check único, como antes.
+function renderMealBlock(rec, m){
+  const e = mealEntry(rec, m);
+  const items = m.items || [];
+  const block = document.createElement("div");
+  block.className = "meal-block";
+
+  if(isSingle(m)){
+    const row = document.createElement("div");
+    row.className = "check" + (e.done ? " done" : "");
+    row.innerHTML =
+      `<span class="box"></span>
+       <span class="ic">${escapeHtml(m.icon)}</span>
+       <span class="meta"><b>${escapeHtml(m.label)}</b>${m.kcal?`<small>${escapeHtml(m.kcal)}</small>`:""}</span>`;
+    row.addEventListener("click", ()=>{ e.done = !e.done; save(); renderDay(); renderMonth(); });
+    block.appendChild(row);
+    return block;
+  }
+
+  const st = mealStats(e, m, true);
+  const allOn = st.total > 0 && st.got === st.total;
+
+  const head = document.createElement("div");
+  head.className = "meal-head" + (allOn ? " done" : st.got>0 ? " partial" : "");
+  head.innerHTML =
+    `<span class="ic">${escapeHtml(m.icon)}</span>
+     <span class="meta"><b>${escapeHtml(m.label)}</b><small>${st.got}/${st.total} itens · ${st.kcal} kcal</small></span>
+     <span class="meal-toggle">${allOn ? "limpar" : "marcar tudo"}</span>`;
+  head.querySelector(".meal-toggle").addEventListener("click", ()=>{
+    if(allOn) e.items = {};                                  // limpa a refeição do dia (itens + órfãos)
+    else items.forEach(it=>{ if(!itemOn(e, it)) checkItem(e, it); }); // não re-snapshota os já marcados
+    save(); renderDay(); renderMonth();
+  });
+  block.appendChild(head);
+
+  items.forEach(it=>{
+    const on = itemOn(e, it);
+    const kc = on ? loggedKcal(e, it) : itemKcal(it);          // logado do dia, ou padrão do plano
+    const text = on ? snapText(e.items[it.id], it.text) : it.text; // marcado = texto congelado do dia
+    const row = document.createElement("div");
+    row.className = "item-row" + (on ? " done" : "");
+    row.innerHTML =
+      `<span class="box"></span>
+       <span class="item-text">${escapeHtml(text)}</span>
+       <span class="item-kcal" title="${on ? "Clique p/ editar a kcal deste dia" : "Marque o item p/ registrar"}">${kc} kcal</span>`;
+    row.addEventListener("click", ()=>{ toggleItem(e, it); save(); renderDay(); renderMonth(); });
+    row.querySelector(".item-kcal").addEventListener("click", ev=>{
+      ev.stopPropagation();
+      // só edita kcal de item JÁ marcado; se não marcado, o clique apenas registra (sem prompt)
+      if(!itemOn(e, it)){ checkItem(e, it); save(); renderDay(); renderMonth(); return; }
+      const v = prompt("kcal de “" + text + "” (só neste dia):", String(loggedKcal(e, it)));
+      if(v === null) return;
+      const n = parseInt(v, 10);
+      if(isNaN(n) || n < 0) return;
+      e.items[it.id] = { k: n, t: snapText(e.items[it.id], it.text) }; // grava SÓ no dia; não toca o plano
+      save(); renderDay(); renderMonth();
+    });
+    block.appendChild(row);
+  });
+
+  // itens logados que não existem mais no plano (diário de removidos)
+  st.orphan.forEach(o=>{
+    const row = document.createElement("div");
+    row.className = "item-row extra done";
+    row.innerHTML =
+      `<span class="box"></span>
+       <span class="item-text">${escapeHtml(o.text)}</span>
+       <span class="item-kcal">${itemKcal(o)} kcal</span>
+       <button class="item-del" title="Remover">×</button>`;
+    row.querySelector(".item-del").addEventListener("click", ev=>{
+      ev.stopPropagation();
+      delete e.items[o.id]; save(); renderDay(); renderMonth();
+    });
+    block.appendChild(row);
+  });
+
+  (e.extra||[]).forEach((x, xi)=>{
+    const row = document.createElement("div");
+    row.className = "item-row extra done";
+    row.innerHTML =
+      `<span class="box"></span>
+       <span class="item-text">${escapeHtml(x.text)}</span>
+       <span class="item-kcal">${itemKcal(x)} kcal</span>
+       <button class="item-del" title="Remover">×</button>`;
+    row.querySelector(".item-del").addEventListener("click", ev=>{
+      ev.stopPropagation();
+      e.extra.splice(xi, 1); save(); renderDay(); renderMonth();
+    });
+    block.appendChild(row);
+  });
+
+  const add = document.createElement("button");
+  add.className = "item-add";
+  add.type = "button";
+  add.textContent = "➕ comi mais alguma coisa";
+  add.addEventListener("click", ()=> openAddFood(rec, m));
+  block.appendChild(add);
+
+  return block;
+}
+
+/* ---------- modal "adicionar alimento" (item avulso numa refeição) ---------- */
+let addFoodTarget = null; // {rec, meal} pendente do modal
+
+function openAddFood(rec, meal){
+  addFoodTarget = { rec, meal };
+  document.getElementById("addFoodSub").textContent = "Item avulso em: " + meal.label;
+  const desc = document.getElementById("addFoodDesc");
+  const kcal = document.getElementById("addFoodKcal");
+  desc.value = ""; kcal.value = "";
+  desc.classList.remove("onb-invalid");
+  document.getElementById("addFoodDialog").showModal();
+  desc.focus();
+}
+
+function confirmAddFood(){
+  if(!addFoodTarget) return;
+  const descEl = document.getElementById("addFoodDesc");
+  const text = descEl.value.trim();
+  if(!text){ // só a descrição é obrigatória
+    descEl.classList.add("onb-invalid"); descEl.focus();
+    setTimeout(()=> descEl.classList.remove("onb-invalid"), 1200);
+    return;
+  }
+  const kcal = Math.max(0, parseInt(document.getElementById("addFoodKcal").value, 10) || 0);
+  const e = mealEntry(addFoodTarget.rec, addFoodTarget.meal);
+  e.extra.push({ id: "x" + Date.now(), text: text.slice(0,80), kcal });
+  closeAddFood();
+  save(); renderDay(); renderMonth();
+}
+
+function closeAddFood(){
+  addFoodTarget = null;
+  document.getElementById("addFoodDialog").close();
 }
 
 // extrai o número de kcal de uma string tipo "~1.080 kcal" ou "1,080 kcal" → 1080.
@@ -258,37 +586,12 @@ function selectDay(key){
   if(hero && hero.scrollIntoView) hero.scrollIntoView({ behavior:"smooth", block:"start" });
 }
 
-document.getElementById("beerInput").addEventListener("input", e=>{
-  const key = selectedKey;
-  const v = parseFloat(e.target.value);
-  if(isNaN(v) || v<=0) delete state.beer[key];
-  else state.beer[key] = v;
-  save(); renderMonth();
-});
-
 document.getElementById("backToToday").addEventListener("click", ()=>{
   // se hoje está em outro mês da tabela, ajusta a visão também
   const now = new Date();
   viewYear = now.getFullYear(); viewMonth = now.getMonth();
   selectDay(todayKey());
 });
-
-/* ===========================================================
-   CARDÁPIO
-   =========================================================== */
-function renderMenu(){
-  const grid = document.getElementById("menuGrid");
-  grid.innerHTML = "";
-  MENU.forEach(c=>{
-    const card = document.createElement("div");
-    card.className = "menu-card acc-"+c.accent;
-    card.innerHTML =
-      `<h4>${c.icon} ${c.title}</h4>
-       ${c.kcal?`<span class="kc">${c.kcal}</span>`:""}
-       <ul>${c.items.map(i=>`<li>${i}</li>`).join("")}</ul>`;
-    grid.appendChild(card);
-  });
-}
 
 /* ===========================================================
    TABELA DO MÊS
@@ -300,13 +603,12 @@ function renderMonth(){
 
   const cols = MEALS; // mesmas colunas dos checks
   let head = `<thead><tr><th class="daycol">Dia</th>`;
-  cols.forEach(m=> head += `<th>${m.icon}</th>`);
-  head += `<th>🍺 L</th><th>%</th></tr></thead>`;
+  cols.forEach(m=> head += `<th>${escapeHtml(m.icon)}</th>`);
+  head += `</tr></thead>`;
 
   const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
   let body = "<tbody>";
   const totals = {}; cols.forEach(m=>totals[m.key]=0);
-  let beerTotal = 0;
 
   for(let d=1; d<=daysInMonth; d++){
     const date = new Date(viewYear, viewMonth, d);
@@ -318,24 +620,20 @@ function renderMonth(){
     const isSel = (key===selectedKey);
 
     let row = `<tr class="${isWeekend?'weekend':''} ${isToday?'today':''} ${isSel?'selected':''}">`;
-    row += `<td class="daycol" data-selkey="${key}" title="Editar este dia no topo">`
-         + `<span class="dnum">${d}</span><span class="dwd">${WD[dow]}</span>`
-         + `<span class="edit-cue">editar ›</span></td>`;
+    row += `<td class="daycol" data-selkey="${key}" title="Clique para editar este dia no topo">`
+         + `<span class="dnum">${d}</span><span class="dwd">${WD[dow]}</span></td>`;
 
     cols.forEach(m=>{
-      const on = !!rec[m.key];
-      if(on) totals[m.key]++;
-      row += `<td><span class="cell-check ${on?'on':''}" data-key="${key}" data-meal="${m.key}">${on?'✓':'○'}</span></td>`;
+      const st = mealStats(entryView(rec, m), m);   // read-only: não muta o state
+      let cls = "", glyph = "○";
+      if(st.got > 0){
+        totals[m.key]++;                            // conta o dia se cumpriu ao menos 1 unidade
+        if(st.got === st.total){ cls="on"; glyph="✓"; }
+        else { cls="partial"; glyph="•"; }
+      }
+      row += `<td><span class="cell-check ${cls}" data-key="${key}" data-meal="${m.key}">${glyph}</span></td>`;
     });
 
-    const beer = state.beer[key] || "";
-    if(beer) beerTotal += parseFloat(beer);
-    row += `<td class="beer-cell"><input type="number" min="0" step="0.5" value="${beer}" data-beerkey="${key}"></td>`;
-
-    const got = cols.filter(m=>rec[m.key]).length;
-    const pct = Math.round(got/cols.length*100);
-    const col = pct===100 ? "var(--lime)" : pct>=50 ? "var(--txt)" : "var(--txt-faint)";
-    row += `<td class="pct-cell" style="color:${col}">${pct}%</td>`;
     row += `</tr>`;
     body += row;
   }
@@ -343,7 +641,7 @@ function renderMonth(){
   // totais
   let tot = `<tr class="totals"><td class="daycol">TOTAL</td>`;
   cols.forEach(m=> tot += `<td>${totals[m.key]}</td>`);
-  tot += `<td>${beerTotal||0}</td><td>—</td></tr>`;
+  tot += `</tr>`;
   body += tot + "</tbody>";
 
   table.innerHTML = head + body;
@@ -353,23 +651,23 @@ function renderMonth(){
     td.addEventListener("click", ()=> selectDay(td.dataset.selkey));
   });
 
-  // listeners das células de check (marca direto na tabela)
+  // listeners das células de check — atalho: liga/desliga a refeição INTEIRA do dia
   table.querySelectorAll(".cell-check").forEach(c=>{
     c.addEventListener("click", ()=>{
       const rec = dayRec(c.dataset.key);
-      rec[c.dataset.meal] = !rec[c.dataset.meal];
+      const meal = MEALS.find(m=> m.key === c.dataset.meal);
+      if(!meal) return;
+      const e = mealEntry(rec, meal);
+      if(isSingle(meal)){
+        e.done = !e.done;
+      } else {
+        const items = meal.items || [];
+        const allOn = items.length > 0 && items.every(it=> itemOn(e, it));
+        if(allOn) e.items = {};                                       // limpa tudo do dia
+        else items.forEach(it=>{ if(!itemOn(e, it)) checkItem(e, it); }); // só os ausentes
+      }
       save(); renderMonth();
       if(c.dataset.key===selectedKey) renderDay();
-    });
-  });
-  // listeners da cerveja na tabela
-  table.querySelectorAll("[data-beerkey]").forEach(inp=>{
-    inp.addEventListener("input", ()=>{
-      const k = inp.dataset.beerkey;
-      const v = parseFloat(inp.value);
-      if(isNaN(v)||v<=0) delete state.beer[k]; else state.beer[k]=v;
-      save();
-      if(k===selectedKey){ document.getElementById("beerInput").value = state.beer[k]||""; }
     });
   });
 }
@@ -383,11 +681,13 @@ document.getElementById("nextMonth").addEventListener("click", ()=>{
 
 function renderLegend(){
   document.getElementById("dietLegend").innerHTML =
-    `<b>Como usar:</b> clique em <b>“editar ›”</b> na coluna Dia pra trazer aquele dia pro topo
-     e marcar tudo como se fosse hoje — ou clique direto no ✓ de cada refeição aqui na tabela.
-     A coluna 🍺 é em litros (escreva o número no dia que beber — meta: máx ~2 L, 1 dia só no fim de semana).
-     A coluna % mostra quanto do dia você fechou. Hoje fica em verde; o dia em edição fica realçado.
-     <b>Dia 100%</b> = café + almoço + lanche + janta + creatina + treino.`;
+    `<b>Como usar:</b> no painel do topo, marque <b>item por item</b> o que você comeu em cada refeição —
+     a kcal de cada item é somada individualmente. Comeu algo fora do plano? Use <b>“➕ comi mais alguma coisa”</b>
+     (soma na kcal do dia, mas não conta no anel de %). Cada dia <b>congela</b> a kcal do item que você
+     marcou — clique na kcal pra ajustá-la <b>só naquele dia</b> (editar não reescreve o histórico).
+     O anel <b>%</b> do topo é <b>proporcional aos itens</b> marcados (não mais por refeição inteira).
+     Na tabela: <b>✓</b> = refeição completa, <b>•</b> = parcial, <b>○</b> = nenhum item; clicar liga/desliga a
+     refeição toda naquele dia. Clique no <b>dia</b> (1ª coluna) pra trazê-lo pro topo e editar.`;
 }
 
 /* ===========================================================
@@ -515,8 +815,8 @@ function renderWorkouts(){
    RESET
    =========================================================== */
 document.getElementById("resetBtn").addEventListener("click", ()=>{
-  if(confirm("Apagar todos os checks e registros de cerveja? Isso não dá pra desfazer.")){
-    state = { days:{}, beer:{} };
+  if(confirm("Apagar todos os checks dos dias? Isso não dá pra desfazer.")){
+    state = { days:{} };
     selectedKey = todayKey();
     save(); renderDay(); renderMonth();
   }
@@ -524,12 +824,22 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
 
 // restaura o conteúdo de dieta/treino pro template padrão (não toca nos checks)
 document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
-  if(confirm("Restaurar dieta e treino para o plano padrão? Suas edições do plano serão perdidas (seus checks e cervejas continuam).")){
+  if(confirm("Restaurar dieta e treino para o plano padrão? Suas edições do plano serão perdidas (seus checks continuam).")){
     restorePlan();
     // re-render de tudo que depende do plano
-    renderDay(); renderMenu(); renderMonth();
+    renderDay(); renderMonth();
     renderWeek(); renderWorkouts();
   }
+});
+
+/* ---------- listeners do modal "adicionar alimento" ---------- */
+document.getElementById("addFoodOk").addEventListener("click", confirmAddFood);
+document.getElementById("addFoodCancel").addEventListener("click", closeAddFood);
+document.getElementById("addFoodDialog").addEventListener("cancel", ()=>{ addFoodTarget = null; }); // ESC
+["addFoodDesc","addFoodKcal"].forEach(id=>{
+  document.getElementById(id).addEventListener("keydown", e=>{
+    if(e.key === "Enter"){ e.preventDefault(); confirmAddFood(); }
+  });
 });
 
 /* ===========================================================
@@ -542,7 +852,6 @@ document.getElementById("restorePlanBtn").addEventListener("click", ()=>{
 
   applyUser();
   renderDay();
-  renderMenu();
   renderMonth();
   renderLegend();
 
