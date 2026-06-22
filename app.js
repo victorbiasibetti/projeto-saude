@@ -240,28 +240,17 @@ function itemKcal(x){ const n = Number(x && x.kcal); return n > 0 ? n : 0; }
    e.items[id] = { k:<kcal>, t:<texto> } congelados no dia em que foi marcado.
    Presença da chave = marcado (resolve item de 0 kcal). Valor `true` = formato legado
    (cai no fallback da kcal do plano até ser re-marcado / backfillado no load). */
+function snapKcal(v){ return (v && typeof v === "object") ? (Number(v.k)||0) : 0; }
+function snapText(v, fallback){ return (v && typeof v === "object" && v.t) ? v.t : fallback; }
 function itemOn(e, it){ return Object.prototype.hasOwnProperty.call(e.items, it.id); }
 function loggedKcal(e, it){
   const v = e.items[it.id];
-  if(v && typeof v === "object") return Number(v.k)||0;
-  return itemKcal(it); // legado (true) → kcal atual do plano
+  return (v && typeof v === "object") ? snapKcal(v) : itemKcal(it); // legado (true) → kcal do plano
 }
 function checkItem(e, it){ e.items[it.id] = { k: itemKcal(it), t: it.text }; }
 function toggleItem(e, it){
   if(itemOn(e, it)) delete e.items[it.id];
   else checkItem(e, it);
-}
-// itens logados que NÃO existem mais no plano (diário de removidos/renomeados)
-function orphanLogged(e, meal){
-  const ids = new Set((meal.items||[]).map(it=>it.id));
-  return Object.keys(e.items)
-    .filter(id=> !ids.has(id))
-    .map(id=>{
-      const v = e.items[id];
-      return (v && typeof v === "object")
-        ? { id, text: v.t || "(item removido)", kcal: Number(v.k)||0 }
-        : { id, text: "(item removido)", kcal: 0 };
-    });
 }
 
 // refeição "ritual" = check único, sem itens (ex.: creatina, treino). Usa a flag
@@ -311,30 +300,40 @@ function migrateDays(){
     const rec = state.days[key];
     if(!rec || typeof rec !== "object") continue;
     MEALS.forEach(m=>{
-      if(rec[m.key] === undefined) return;
+      const raw = rec[m.key];
+      if(raw === undefined) return;
+      const wasLegacy = (raw === true) || (typeof raw !== "object"); // valor que precisa converter
       const e = mealEntry(rec, m);
+      let touched = wasLegacy;
       // backfill: checks antigos (id:true) viram snapshot {k,t} com kcal/texto do plano
       (m.items||[]).forEach(it=>{
-        if(e.items[it.id] === true) e.items[it.id] = { k: itemKcal(it), t: it.text };
+        if(e.items[it.id] === true){ e.items[it.id] = { k: itemKcal(it), t: it.text }; touched = true; }
       });
-      changed = true;
+      if(touched) changed = true;   // só re-salva se algo legado foi de fato convertido
     });
   }
   if(changed) save();
 }
 
 // got/total/kcal de uma refeição num dia — REGRA ÚNICA (painel, tabela e anéis).
-// kcal lê o snapshot logado (não o plano); órfãos (itens removidos) somam kcal mas
-// não entram em got/total/%.
-function mealStats(e, meal){
+// kcal lê o snapshot logado (não o plano); órfãos (itens removidos do plano) somam kcal mas
+// não entram em got/total/%. A LISTA de órfãos só é montada quando `wantOrphan` (painel) —
+// a tabela do mês não precisa, evita alocação por célula.
+function mealStats(e, meal, wantOrphan){
   const items = meal.items || [];
   if(isSingle(meal)){
     return { items, got: e.done?1:0, total:1, kcal: e.done ? mealKcal(meal.kcal) : 0, orphan: [] };
   }
   let got = 0, kcal = 0;
   items.forEach(it=>{ if(itemOn(e, it)){ got++; kcal += loggedKcal(e, it); } });
-  const orphan = orphanLogged(e, meal);
-  kcal += orphan.reduce((s,o)=> s + o.kcal, 0);
+  const planIds = new Set(items.map(it=>it.id));
+  const orphan = [];
+  Object.keys(e.items).forEach(id=>{
+    if(planIds.has(id)) return;
+    const ok = snapKcal(e.items[id]);
+    kcal += ok;                                   // órfão soma kcal
+    if(wantOrphan) orphan.push({ id, text: snapText(e.items[id], "(item removido)"), kcal: ok });
+  });
   return { items, got, total: items.length, kcal, orphan };
 }
 // kcal planejada total de uma refeição (somatório dos itens, ou rótulo se ritual).
@@ -452,7 +451,7 @@ function renderMealBlock(rec, m){
     return block;
   }
 
-  const st = mealStats(e, m);
+  const st = mealStats(e, m, true);
   const allOn = st.total > 0 && st.got === st.total;
 
   const head = document.createElement("div");
@@ -462,31 +461,32 @@ function renderMealBlock(rec, m){
      <span class="meta"><b>${escapeHtml(m.label)}</b><small>${st.got}/${st.total} itens · ${st.kcal} kcal</small></span>
      <span class="meal-toggle">${allOn ? "limpar" : "marcar tudo"}</span>`;
   head.querySelector(".meal-toggle").addEventListener("click", ()=>{
-    if(allOn) items.forEach(it=> delete e.items[it.id]);
-    else items.forEach(it=> checkItem(e, it));
+    if(allOn) e.items = {};                                  // limpa a refeição do dia (itens + órfãos)
+    else items.forEach(it=>{ if(!itemOn(e, it)) checkItem(e, it); }); // não re-snapshota os já marcados
     save(); renderDay(); renderMonth();
   });
   block.appendChild(head);
 
   items.forEach(it=>{
     const on = itemOn(e, it);
-    const kc = on ? loggedKcal(e, it) : itemKcal(it);  // logado do dia, ou padrão do plano
+    const kc = on ? loggedKcal(e, it) : itemKcal(it);          // logado do dia, ou padrão do plano
+    const text = on ? snapText(e.items[it.id], it.text) : it.text; // marcado = texto congelado do dia
     const row = document.createElement("div");
     row.className = "item-row" + (on ? " done" : "");
     row.innerHTML =
       `<span class="box"></span>
-       <span class="item-text">${escapeHtml(it.text)}</span>
-       <span class="item-kcal" title="Clique p/ editar a kcal deste dia">${kc} kcal</span>`;
+       <span class="item-text">${escapeHtml(text)}</span>
+       <span class="item-kcal" title="${on ? "Clique p/ editar a kcal deste dia" : "Marque o item p/ registrar"}">${kc} kcal</span>`;
     row.addEventListener("click", ()=>{ toggleItem(e, it); save(); renderDay(); renderMonth(); });
     row.querySelector(".item-kcal").addEventListener("click", ev=>{
       ev.stopPropagation();
-      const v = prompt("kcal de “" + it.text + "” (só neste dia):", String(kc));
+      // só edita kcal de item JÁ marcado; se não marcado, o clique apenas registra (sem prompt)
+      if(!itemOn(e, it)){ checkItem(e, it); save(); renderDay(); renderMonth(); return; }
+      const v = prompt("kcal de “" + text + "” (só neste dia):", String(loggedKcal(e, it)));
       if(v === null) return;
       const n = parseInt(v, 10);
       if(isNaN(n) || n < 0) return;
-      const cur = e.items[it.id];
-      const t = (cur && typeof cur === "object" && cur.t) ? cur.t : it.text;
-      e.items[it.id] = { k: n, t };   // grava SÓ no dia (marca se não estava); não toca o plano
+      e.items[it.id] = { k: n, t: snapText(e.items[it.id], it.text) }; // grava SÓ no dia; não toca o plano
       save(); renderDay(); renderMonth();
     });
     block.appendChild(row);
@@ -663,8 +663,8 @@ function renderMonth(){
       } else {
         const items = meal.items || [];
         const allOn = items.length > 0 && items.every(it=> itemOn(e, it));
-        if(allOn) items.forEach(it=> delete e.items[it.id]);
-        else items.forEach(it=> checkItem(e, it));
+        if(allOn) e.items = {};                                       // limpa tudo do dia
+        else items.forEach(it=>{ if(!itemOn(e, it)) checkItem(e, it); }); // só os ausentes
       }
       save(); renderMonth();
       if(c.dataset.key===selectedKey) renderDay();

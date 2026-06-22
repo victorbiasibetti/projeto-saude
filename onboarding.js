@@ -255,7 +255,9 @@ function sanitizeImport(obj){
       kcal: typeof c.kcal === "string" ? c.kcal : "",
       items,
     };
-  });
+  }).filter(c=> c.items.length > 0); // descarta refeição sem itens (evitar virar check ritual)
+  if(menu.length === 0)
+    throw new Error("Nenhuma refeição com itens. Confira se copiou a resposta inteira.");
   return {
     menu,
     targetKcal: Number(obj.targetKcal) || null,
