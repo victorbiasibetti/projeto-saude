@@ -113,19 +113,14 @@
       </div>
     </div>
 
-    <div class="checks" id="todayChecks"></div>
-
-    <div class="beer-row">
-      <label for="beerInput">🍺 Cerveja hoje (litros)</label>
-      <input type="number" id="beerInput" min="0" step="0.5" placeholder="0">
-      <span class="beer-hint">meta: máx ~2 L, 1 dia só no fim de semana</span>
-    </div>
+    <!-- extras logo após o resumo do dia (refeições sem itens: creatina, treino) -->
+    <div class="checks day-extras" id="dayExtras"></div>
 
     <div class="section-head">
       <h3>Cardápio de referência</h3>
       <span class="kcal-tag" id="dietKcalTag">~2.700 kcal · 165 P / 340 C / 75 G</span>
     </div>
-    <div class="menu-grid" id="menuGrid"></div>
+    <div class="checks" id="todayChecks"></div>
 
     <div class="section-head">
       <h3>Histórico do mês</h3>
@@ -341,6 +336,25 @@
   <div class="onb-dialog-actions">
     <button id="onbCfmCancel" class="onb-btn ghost">Cancelar</button>
     <button id="onbCfmContinue" class="onb-btn primary">Continuar</button>
+  </div>
+</dialog>
+
+<!-- Modal: adicionar alimento avulso a uma refeição do dia -->
+<dialog id="addFoodDialog" class="onb-dialog">
+  <div class="onb-head">
+    <span class="onb-mark">▲</span>
+    <div>
+      <h2>Adicionar alimento</h2>
+      <p id="addFoodSub">O que você comeu a mais?</p>
+    </div>
+  </div>
+  <label class="onb-label" for="addFoodDesc">Descrição</label>
+  <input type="text" id="addFoodDesc" class="onb-input" placeholder="Ex.: 2 fatias de pizza" autocomplete="off">
+  <label class="onb-label" for="addFoodKcal">Kcal estimada (opcional)</label>
+  <input type="number" id="addFoodKcal" class="onb-input" placeholder="0" min="0" step="10">
+  <div class="onb-dialog-actions">
+    <button id="addFoodCancel" class="onb-btn ghost">Cancelar</button>
+    <button id="addFoodOk" class="onb-btn primary">Adicionar</button>
   </div>
 </dialog>
 

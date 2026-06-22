@@ -22,13 +22,13 @@ const ONB = {
 };
 
 // flag de "responder depois" — evita o overlay re-abrir sozinho a cada carga
-const DEFER_KEY = "projeto_enterrada_defer_v1";
+const DEFER_KEY = "projeto_saude_defer_v1";
 
 const PROJECT_SUGGESTIONS = [
   "Projeto -5kg",
   "Projeto Verão",
   "Esse ano o shape vem!",
-  "Projeto Enterrada",
+  "Projeto Saúde",
   "Operação Definição",
   "Mais forte que ontem",
 ];
@@ -170,7 +170,8 @@ function buildPrompt(){
 `  "targetKcal": ${d.targetKcal},`,
 `  "macros": "<P>g P / <C>g C / <G>g G",`,
 `  "menu": [`,
-`    { "title": "Café", "icon": "☕", "accent": "azul", "kcal": "~700 kcal · 40 P / 80 C / 20 G", "items": ["alimento 1 com quantidade", "alimento 2 com quantidade"] }`,
+`    { "title": "Café", "icon": "☕", "accent": "azul", "kcal": "~700 kcal · 40 P / 80 C / 20 G",`,
+`      "items": [ { "text": "alimento 1 com quantidade", "kcal": 280 }, { "text": "alimento 2 com quantidade", "kcal": 90 } ] }`,
 `  ],`,
 `  "workouts": [`,
 `    { "id": "A", "accent": "azul", "titulo": "Treino A — Peito/Ombro/Tríceps", "sub": "frase curta",`,
@@ -186,7 +187,8 @@ function buildPrompt(){
 `- "accent" só pode ser: azul, verde, laranja, roxo, cinza (varie entre as refeições).`,
 `- Crie de 4 a 6 refeições (café, almoço, lanche, janta e opcionalmente ceia/pré-treino).`,
 `- A soma das kcal das refeições deve ficar perto de ${d.targetKcal} kcal.`,
-`- Cada "items" lista alimentos com quantidades, usando comida comum no Brasil.`,
+`- Cada "items" lista alimentos com quantidades (comida comum no Brasil) e a "kcal" (número inteiro) de CADA item.`,
+`- A soma das kcal dos itens de uma refeição deve bater com a kcal total daquela refeição.`,
 ``,
 `REGRAS TREINO`,
 `- Crie exatamente ${dias} treinos em "workouts" (um por dia de treino), id A, B, C... em ordem.`,
@@ -217,11 +219,13 @@ function deriveMeals(menu){
     let key = slugify(c.title);
     while(used.has(key)) key += "_"; // garante unicidade
     used.add(key);
-    return { key, icon: c.icon || "🍽️", label: c.title, kcal: shortKcal(c.kcal) };
+    // itens marcáveis da refeição, com id estável prefixado pela key da refeição
+    const items = (c.items||[]).map((it,i)=>({ id: key+"_"+i, text: it.text, kcal: Number(it.kcal)||0 }));
+    return { key, icon: c.icon || "🍽️", label: c.title, kcal: shortKcal(c.kcal), items };
   });
-  // a aba Treino e o "dia 100%" dependem deste check — sempre presente
+  // a aba Treino e o "dia 100%" dependem deste check — sempre presente, sem itens
   if(!used.has("treino"))
-    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"" });
+    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"", items:[] });
   return meals;
 }
 
@@ -242,12 +246,19 @@ function sanitizeImport(obj){
   const menu = obj.menu.map((c, i)=>{
     if(!c || typeof c.title !== "string" || !Array.isArray(c.items))
       throw new Error("Uma refeição veio incompleta (faltou nome ou itens).");
+    const base = slugify(c.title);
+    const items = c.items.map((x, j)=>{
+      // aceita item objeto {text,kcal} OU string legada (kcal 0)
+      const text = (x && typeof x === "object") ? String(x.text||"") : String(x);
+      const kcal = (x && typeof x === "object") ? (Math.max(0, parseInt(x.kcal,10)) || 0) : 0;
+      return text.trim() ? { id: base+"_"+j, text: text.slice(0,80), kcal } : null;
+    }).filter(Boolean).slice(0,12);
     return {
       title: String(c.title).slice(0,60),
       icon: typeof c.icon === "string" && c.icon ? c.icon : "🍽️",
       accent: ACCENTS.includes(c.accent) ? c.accent : ACCENTS[i % ACCENTS.length],
       kcal: typeof c.kcal === "string" ? c.kcal : "",
-      items: c.items.map(x=> String(x)).filter(Boolean).slice(0,12),
+      items,
     };
   });
   return {
@@ -411,7 +422,7 @@ function finalizeOnboarding(){
   const d = ONB.draft;
   user = {
     name: d.name || "",
-    project: d.project || "Projeto Enterrada",
+    project: d.project || "Projeto Saúde",
     height: d.height || null,
     weight: d.weight || null,
     age: d.age || null,
@@ -483,7 +494,7 @@ function closeOnboarding(){
    =========================================================== */
 function exportAll(){
   const payload = {
-    app: "projeto-enterrada",
+    app: "projeto-saude",
     version: 1,
     exportedAt: new Date().toISOString(),
     user: user,
@@ -493,7 +504,7 @@ function exportAll(){
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type:"application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const slug = (user && user.project ? user.project : "projeto-enterrada")
+  const slug = (user && user.project ? user.project : "projeto-saude")
     .toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   a.href = url;
   a.download = slug + "-backup.json";
@@ -506,7 +517,7 @@ function importAll(file){
   reader.onload = ()=>{
     try{
       const data = JSON.parse(reader.result);
-      if(data.app && data.app !== "projeto-enterrada")
+      if(data.app && data.app !== "projeto-saude" && data.app !== "projeto-enterrada")
         throw new Error("Arquivo de outro app.");
       if(data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
       if(data.plan) localStorage.setItem(PLAN_KEY, JSON.stringify(data.plan));

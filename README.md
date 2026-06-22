@@ -24,15 +24,17 @@ Abre sozinho quando ainda não há perfil. 4 passos:
 3. **Metabolismo** — calcula seu **BMR** (Mifflin-St Jeor) e **TDEE** (gasto total), define a
    meta calórica e o objetivo (perder/manter/ganhar).
 4. **Cardápio** — gera um prompt pronto pra colar no Chat-GPT (ou outra IA); você cola a
-   resposta de volta e o app importa as refeições.
+   resposta de volta e o app importa as refeições com **kcal por item** (a IA preenche; você ajusta).
 
 Dá pra clicar em **"Responder depois"** e configurar mais tarde pelo botão **"Configurar
 perfil"** no rodapé.
 
 ## Funcionalidades
 
-- **Aba Dieta:** painel do dia com dois anéis (**% de metas cumpridas** e **kcal ingeridas**
-  com a meta de referência), checks de refeição, registro de cerveja e tabela do mês.
+- **Aba Dieta:** painel do dia com dois anéis (**% dos itens cumpridos** e **kcal ingeridas**
+  com a meta de referência). Cada refeição expande nos seus **itens marcáveis individualmente**
+  (com kcal própria, editável no clique); dá pra adicionar **itens avulsos** ("comi mais X") que
+  somam kcal sem contar no %. Mais a tabela do mês (✓ completa / • parcial / ○).
 - **Aba Treino:** fase atual do ciclo, divisão semanal (ABC) e os treinos por fase.
 - **Backup:** **Exportar / Importar JSON** no rodapé pra mover seus dados entre navegadores.
 - **Privacidade:** dados ficam 100% no seu navegador.
