@@ -236,6 +236,34 @@ function escapeHtml(s){
 // kcal de um item/avulso, tolerante a string/null/negativo. Regra única.
 function itemKcal(x){ const n = Number(x && x.kcal); return n > 0 ? n : 0; }
 
+/* ---------- item logado num dia (SNAPSHOT / diário) ----------
+   e.items[id] = { k:<kcal>, t:<texto> } congelados no dia em que foi marcado.
+   Presença da chave = marcado (resolve item de 0 kcal). Valor `true` = formato legado
+   (cai no fallback da kcal do plano até ser re-marcado / backfillado no load). */
+function itemOn(e, it){ return Object.prototype.hasOwnProperty.call(e.items, it.id); }
+function loggedKcal(e, it){
+  const v = e.items[it.id];
+  if(v && typeof v === "object") return Number(v.k)||0;
+  return itemKcal(it); // legado (true) → kcal atual do plano
+}
+function checkItem(e, it){ e.items[it.id] = { k: itemKcal(it), t: it.text }; }
+function toggleItem(e, it){
+  if(itemOn(e, it)) delete e.items[it.id];
+  else checkItem(e, it);
+}
+// itens logados que NÃO existem mais no plano (diário de removidos/renomeados)
+function orphanLogged(e, meal){
+  const ids = new Set((meal.items||[]).map(it=>it.id));
+  return Object.keys(e.items)
+    .filter(id=> !ids.has(id))
+    .map(id=>{
+      const v = e.items[id];
+      return (v && typeof v === "object")
+        ? { id, text: v.t || "(item removido)", kcal: Number(v.k)||0 }
+        : { id, text: "(item removido)", kcal: 0 };
+    });
+}
+
 // refeição "ritual" = check único, sem itens (ex.: creatina, treino). Usa a flag
 // `single` quando presente; senão cai no nº de itens (compat com planos já salvos).
 function isSingle(m){
@@ -243,8 +271,9 @@ function isSingle(m){
 }
 
 /* ---------- forma normalizada de um registro de refeição ----------
-   v3: state.days[data][mealKey] = { items:{id:true}, extra:[{id,text,kcal}], done:bool }.
-   Legado: o valor era booleano. true → todos os itens marcados (ou, ritual, feita).
+   state.days[data][mealKey] = { items:{ id:{k,t} }, extra:[{id,text,kcal}], done:bool }.
+   items[id] = snapshot {k:kcal, t:texto} congelado no dia (presença da chave = marcado).
+   Legado: o valor da refeição era booleano, ou items[id] era `true` (kcal cai no plano).
    entryView = versão PURA (não grava) p/ cálculo em render read-only.
    mealEntry = grava o objeto normalizado de volta em `rec` (caminhos de mutação). */
 function entryView(rec, meal){
@@ -252,7 +281,7 @@ function entryView(rec, meal){
   if(raw === true){
     return isSingle(meal)
       ? { items:{}, extra:[], done:true }
-      : { items: Object.fromEntries((meal.items||[]).map(it=>[it.id,true])), extra:[], done:true };
+      : { items: Object.fromEntries((meal.items||[]).map(it=>[it.id, { k: itemKcal(it), t: it.text }])), extra:[], done:true };
   }
   if(!raw || typeof raw !== "object") return { items:{}, extra:[], done:false };
   return {
@@ -283,7 +312,11 @@ function migrateDays(){
     if(!rec || typeof rec !== "object") continue;
     MEALS.forEach(m=>{
       if(rec[m.key] === undefined) return;
-      mealEntry(rec, m);
+      const e = mealEntry(rec, m);
+      // backfill: checks antigos (id:true) viram snapshot {k,t} com kcal/texto do plano
+      (m.items||[]).forEach(it=>{
+        if(e.items[it.id] === true) e.items[it.id] = { k: itemKcal(it), t: it.text };
+      });
       changed = true;
     });
   }
@@ -291,14 +324,18 @@ function migrateDays(){
 }
 
 // got/total/kcal de uma refeição num dia — REGRA ÚNICA (painel, tabela e anéis).
+// kcal lê o snapshot logado (não o plano); órfãos (itens removidos) somam kcal mas
+// não entram em got/total/%.
 function mealStats(e, meal){
   const items = meal.items || [];
-  if(items.length){
-    let got = 0, kcal = 0;
-    items.forEach(it=>{ if(e.items[it.id]){ got++; kcal += itemKcal(it); } });
-    return { items, got, total: items.length, kcal };
+  if(isSingle(meal)){
+    return { items, got: e.done?1:0, total:1, kcal: e.done ? mealKcal(meal.kcal) : 0, orphan: [] };
   }
-  return { items, got: e.done?1:0, total:1, kcal: e.done ? mealKcal(meal.kcal) : 0 };
+  let got = 0, kcal = 0;
+  items.forEach(it=>{ if(itemOn(e, it)){ got++; kcal += loggedKcal(e, it); } });
+  const orphan = orphanLogged(e, meal);
+  kcal += orphan.reduce((s,o)=> s + o.kcal, 0);
+  return { items, got, total: items.length, kcal, orphan };
 }
 // kcal planejada total de uma refeição (somatório dos itens, ou rótulo se ritual).
 function mealPlanKcal(meal){
@@ -425,26 +462,48 @@ function renderMealBlock(rec, m){
      <span class="meta"><b>${escapeHtml(m.label)}</b><small>${st.got}/${st.total} itens · ${st.kcal} kcal</small></span>
      <span class="meal-toggle">${allOn ? "limpar" : "marcar tudo"}</span>`;
   head.querySelector(".meal-toggle").addEventListener("click", ()=>{
-    items.forEach(it=> e.items[it.id] = !allOn);
+    if(allOn) items.forEach(it=> delete e.items[it.id]);
+    else items.forEach(it=> checkItem(e, it));
     save(); renderDay(); renderMonth();
   });
   block.appendChild(head);
 
   items.forEach(it=>{
-    const on = !!e.items[it.id];
+    const on = itemOn(e, it);
+    const kc = on ? loggedKcal(e, it) : itemKcal(it);  // logado do dia, ou padrão do plano
     const row = document.createElement("div");
     row.className = "item-row" + (on ? " done" : "");
     row.innerHTML =
       `<span class="box"></span>
        <span class="item-text">${escapeHtml(it.text)}</span>
-       <span class="item-kcal" title="Clique p/ editar a kcal">${itemKcal(it)} kcal</span>`;
-    row.addEventListener("click", ()=>{ e.items[it.id] = !e.items[it.id]; save(); renderDay(); renderMonth(); });
+       <span class="item-kcal" title="Clique p/ editar a kcal deste dia">${kc} kcal</span>`;
+    row.addEventListener("click", ()=>{ toggleItem(e, it); save(); renderDay(); renderMonth(); });
     row.querySelector(".item-kcal").addEventListener("click", ev=>{
       ev.stopPropagation();
-      const v = prompt("kcal de “" + it.text + "”:", String(itemKcal(it)));
+      const v = prompt("kcal de “" + it.text + "” (só neste dia):", String(kc));
       if(v === null) return;
       const n = parseInt(v, 10);
-      if(!isNaN(n) && n >= 0){ it.kcal = n; savePlan(); renderDay(); renderMonth(); }
+      if(isNaN(n) || n < 0) return;
+      const cur = e.items[it.id];
+      const t = (cur && typeof cur === "object" && cur.t) ? cur.t : it.text;
+      e.items[it.id] = { k: n, t };   // grava SÓ no dia (marca se não estava); não toca o plano
+      save(); renderDay(); renderMonth();
+    });
+    block.appendChild(row);
+  });
+
+  // itens logados que não existem mais no plano (diário de removidos)
+  st.orphan.forEach(o=>{
+    const row = document.createElement("div");
+    row.className = "item-row extra done";
+    row.innerHTML =
+      `<span class="box"></span>
+       <span class="item-text">${escapeHtml(o.text)}</span>
+       <span class="item-kcal">${itemKcal(o)} kcal</span>
+       <button class="item-del" title="Remover">×</button>`;
+    row.querySelector(".item-del").addEventListener("click", ev=>{
+      ev.stopPropagation();
+      delete e.items[o.id]; save(); renderDay(); renderMonth();
     });
     block.appendChild(row);
   });
@@ -599,12 +658,13 @@ function renderMonth(){
       const meal = MEALS.find(m=> m.key === c.dataset.meal);
       if(!meal) return;
       const e = mealEntry(rec, meal);
-      const items = meal.items || [];
-      if(items.length){
-        const allOn = items.every(it=> e.items[it.id]);
-        items.forEach(it=> e.items[it.id] = !allOn);
-      } else {
+      if(isSingle(meal)){
         e.done = !e.done;
+      } else {
+        const items = meal.items || [];
+        const allOn = items.length > 0 && items.every(it=> itemOn(e, it));
+        if(allOn) items.forEach(it=> delete e.items[it.id]);
+        else items.forEach(it=> checkItem(e, it));
       }
       save(); renderMonth();
       if(c.dataset.key===selectedKey) renderDay();
@@ -623,7 +683,8 @@ function renderLegend(){
   document.getElementById("dietLegend").innerHTML =
     `<b>Como usar:</b> no painel do topo, marque <b>item por item</b> o que você comeu em cada refeição —
      a kcal de cada item é somada individualmente. Comeu algo fora do plano? Use <b>“➕ comi mais alguma coisa”</b>
-     (soma na kcal do dia, mas não conta no anel de %). Clique na kcal de um item pra ajustá-la.
+     (soma na kcal do dia, mas não conta no anel de %). Cada dia <b>congela</b> a kcal do item que você
+     marcou — clique na kcal pra ajustá-la <b>só naquele dia</b> (editar não reescreve o histórico).
      O anel <b>%</b> do topo é <b>proporcional aos itens</b> marcados (não mais por refeição inteira).
      Na tabela: <b>✓</b> = refeição completa, <b>•</b> = parcial, <b>○</b> = nenhum item; clicar liga/desliga a
      refeição toda naquele dia. Clique no <b>dia</b> (1ª coluna) pra trazê-lo pro topo e editar.`;
