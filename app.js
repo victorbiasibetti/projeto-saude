@@ -37,7 +37,7 @@ let plan = loadPlan();
 
 // Espelhos das seções do plano (mantêm os nomes que o resto do código já usa).
 // São derivados de `plan`; se o plano mudar, chame syncPlanRefs() + re-render.
-let MEALS, MENU, WEEK, WORKOUTS;
+let MEALS, WEEK, WORKOUTS;
 syncPlanRefs();
 
 function loadPlan(){
@@ -79,19 +79,34 @@ function migratePlan(p){
   if(changed){ try{ localStorage.setItem(PLAN_KEY, JSON.stringify(p)); }catch(e){} }
   return p;
 }
-// v2→v3: itens string → {id,text,kcal:0}; meals herdam os itens do card de mesmo título.
+// v2→v3: itens string → {id,text,kcal}; meals herdam os itens do card de mesmo título.
+// Como a v2 não tinha kcal por item, semeia distribuindo a kcal do rótulo da refeição
+// entre os itens (senão o anel de kcal ficaria zerado pra quem já tinha plano).
 function migrateItemsV3(p){
   (p.menu||[]).forEach(card=>{
     const base = planSlug(card.title) || "ref";
     card.items = (card.items||[]).map((it,i)=> normItem(it, base, i));
+    seedItemKcal(card.items, mealKcal(card.kcal));
   });
   const byTitle = {};
   (p.menu||[]).forEach(c=> byTitle[planSlug(c.title)] = c.items);
   (p.meals||[]).forEach(m=>{
-    if(Array.isArray(m.items)) return;           // já migrado (idempotente)
-    const match = byTitle[planSlug(m.label)];
-    m.items = match ? JSON.parse(JSON.stringify(match)) : [];
+    if(!Array.isArray(m.items)){                 // ainda não migrado
+      const match = byTitle[planSlug(m.label)];
+      m.items = match ? JSON.parse(JSON.stringify(match)) : [];
+      if(!m.items.length) seedItemKcal(m.items, 0); // no-op, mantém forma
+      else seedItemKcal(m.items, mealKcal(m.kcal));
+    }
+    // refeições rituais conhecidas viram check único explícito
+    if(m.single === undefined && (m.key === "creatina" || m.key === "treino")) m.single = true;
   });
+}
+// se todos os itens estão com kcal 0 e há um total (rótulo), distribui igualmente entre eles.
+function seedItemKcal(items, total){
+  if(!items.length || total <= 0) return;
+  if(items.some(it=> itemKcal(it) > 0)) return;   // já tem kcal real, não mexe
+  const per = Math.round(total / items.length);
+  items.forEach((it,i)=>{ it.kcal = (i === items.length-1) ? (total - per*(items.length-1)) : per; });
 }
 // chave segura a partir de um texto (sem acento/espaço). Usada na migração e nos ids.
 function planSlug(s){
@@ -99,11 +114,13 @@ function planSlug(s){
     .normalize("NFD").replace(/[̀-ͯ]/g,"")
     .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
 }
-// normaliza um item de refeição (string legada OU objeto) → {id,text,kcal}
+// normaliza um item de refeição (string legada OU objeto) → {id,text,kcal}.
+// Regra única usada pela migração E pelo import (texto até 80 chars, kcal >= 0).
 function normItem(it, base, i){
-  if(it && typeof it === "object")
-    return { id: it.id || (base+"_"+i), text: String(it.text||""), kcal: Number(it.kcal)||0 };
-  return { id: base+"_"+i, text: String(it), kcal: 0 };
+  const isObj = it && typeof it === "object";
+  const text = String(isObj ? (it.text||"") : it).slice(0,80);
+  const kcal = isObj ? (Math.max(0, parseInt(it.kcal,10)) || 0) : 0;
+  return { id: (isObj && it.id) ? it.id : (base+"_"+i), text, kcal };
 }
 // copia (deep clone) o template pro localStorage e devolve
 function seedPlan(){
@@ -118,7 +135,6 @@ function savePlan(){
 // re-aponta os espelhos pro plano atual (chamar após editar/restaurar o plano)
 function syncPlanRefs(){
   MEALS = plan.meals;
-  MENU = plan.menu;
   WEEK = plan.week;
   WORKOUTS = plan.workouts;
 }
@@ -172,6 +188,7 @@ function refreshAll(){
 
 /* ---------- estado do usuário (checks dos dias) ---------- */
 let state = load();
+migrateDays();                 // normaliza registros legados (bool) uma vez, no load
 let viewYear, viewMonth;       // mês exibido na tabela
 let selectedKey = todayKey();  // dia sendo editado no painel do topo (padrão: hoje)
 
@@ -216,19 +233,38 @@ function escapeHtml(s){
     .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-/* ---------- estado de uma refeição num dia (tolerante ao formato legado) ----------
+// kcal de um item/avulso, tolerante a string/null/negativo. Regra única.
+function itemKcal(x){ const n = Number(x && x.kcal); return n > 0 ? n : 0; }
+
+// refeição "ritual" = check único, sem itens (ex.: creatina, treino). Usa a flag
+// `single` quando presente; senão cai no nº de itens (compat com planos já salvos).
+function isSingle(m){
+  return m.single === true || (m.single === undefined && !(m.items && m.items.length));
+}
+
+/* ---------- forma normalizada de um registro de refeição ----------
    v3: state.days[data][mealKey] = { items:{id:true}, extra:[{id,text,kcal}], done:bool }.
-   Legado: o valor era booleano. true → todos os itens marcados (ou, sem itens, feita).
-   Sempre devolve o objeto normalizado (e o grava de volta em `rec`). */
+   Legado: o valor era booleano. true → todos os itens marcados (ou, ritual, feita).
+   entryView = versão PURA (não grava) p/ cálculo em render read-only.
+   mealEntry = grava o objeto normalizado de volta em `rec` (caminhos de mutação). */
+function entryView(rec, meal){
+  const raw = rec[meal.key];
+  if(raw === true){
+    return isSingle(meal)
+      ? { items:{}, extra:[], done:true }
+      : { items: Object.fromEntries((meal.items||[]).map(it=>[it.id,true])), extra:[], done:true };
+  }
+  if(!raw || typeof raw !== "object") return { items:{}, extra:[], done:false };
+  return {
+    items: (raw.items && typeof raw.items === "object") ? raw.items : {},
+    extra: Array.isArray(raw.extra) ? raw.extra : [],
+    done: raw.done === true,
+  };
+}
 function mealEntry(rec, meal){
   let e = rec[meal.key];
-  const hasItems = meal.items && meal.items.length > 0;
-  if(e === true){
-    e = hasItems
-      ? { items: Object.fromEntries(meal.items.map(it=>[it.id, true])), extra: [], done: true }
-      : { items: {}, extra: [], done: true };
-  } else if(!e || typeof e !== "object"){
-    e = { items: {}, extra: [], done: false };
+  if(!e || typeof e !== "object"){
+    e = entryView(rec, meal);
   } else {
     if(!e.items || typeof e.items !== "object") e.items = {};
     if(!Array.isArray(e.extra)) e.extra = [];
@@ -238,31 +274,54 @@ function mealEntry(rec, meal){
   return e;
 }
 
+// normaliza UMA vez no load os registros legados (bool) já salvos — assim o render
+// não precisa mutar o state. Só toca refeições que já têm entrada no dia (sem inflar).
+function migrateDays(){
+  let changed = false;
+  for(const key in state.days){
+    const rec = state.days[key];
+    if(!rec || typeof rec !== "object") continue;
+    MEALS.forEach(m=>{
+      if(rec[m.key] === undefined) return;
+      mealEntry(rec, m);
+      changed = true;
+    });
+  }
+  if(changed) save();
+}
+
+// got/total/kcal de uma refeição num dia — REGRA ÚNICA (painel, tabela e anéis).
+function mealStats(e, meal){
+  const items = meal.items || [];
+  if(items.length){
+    let got = 0, kcal = 0;
+    items.forEach(it=>{ if(e.items[it.id]){ got++; kcal += itemKcal(it); } });
+    return { items, got, total: items.length, kcal };
+  }
+  return { items, got: e.done?1:0, total:1, kcal: e.done ? mealKcal(meal.kcal) : 0 };
+}
+// kcal planejada total de uma refeição (somatório dos itens, ou rótulo se ritual).
+function mealPlanKcal(meal){
+  const items = meal.items || [];
+  return items.length ? items.reduce((s,it)=> s + itemKcal(it), 0) : mealKcal(meal.kcal);
+}
+
 /* ---------- fonte ÚNICA de cálculo do dia (usada pelo painel e pela tabela) ----------
-   % do dia = itens marcados / itens planejados (refeição sem itens = 1 unidade).
+   % do dia = itens marcados / itens planejados (refeição ritual = 1 unidade).
    Itens avulsos (extra) somam kcal mas NÃO entram no %  — são bônus, não aderência. */
 function dayProgress(key){
   const rec = state.days[key] || {};
   let totalUnits = 0, gotUnits = 0, kcalGot = 0, kcalPlan = 0;
   const perMeal = {};
   MEALS.forEach(m=>{
-    const e = mealEntry(rec, m);
-    const items = m.items || [];
-    if(items.length){
-      const got = items.filter(it=> e.items[it.id]).length;
-      totalUnits += items.length;
-      gotUnits   += got;
-      kcalGot    += items.reduce((s,it)=> s + (e.items[it.id] ? (Number(it.kcal)||0) : 0), 0);
-      kcalPlan   += items.reduce((s,it)=> s + (Number(it.kcal)||0), 0);
-      perMeal[m.key] = { got, total: items.length };
-    } else {
-      totalUnits += 1;
-      gotUnits   += e.done ? 1 : 0;
-      kcalGot    += e.done ? mealKcal(m.kcal) : 0;
-      kcalPlan   += mealKcal(m.kcal);
-      perMeal[m.key] = { got: e.done ? 1 : 0, total: 1 };
-    }
-    kcalGot += (e.extra||[]).reduce((s,x)=> s + (Number(x.kcal)||0), 0); // avulsos: só kcal
+    const e  = entryView(rec, m);                 // PURO: não suja o state durante render
+    const st = mealStats(e, m);
+    totalUnits += st.total;
+    gotUnits   += st.got;
+    kcalGot    += st.kcal;
+    kcalPlan   += mealPlanKcal(m);
+    kcalGot    += e.extra.reduce((s,x)=> s + itemKcal(x), 0); // avulsos: só kcal
+    perMeal[m.key] = { got: st.got, total: st.total };
   });
   const pct = totalUnits ? Math.round(gotUnits/totalUnits*100) : 0;
   const kcalDenom = (user && user.targetKcal) ? user.targetKcal : (kcalPlan || 1);
@@ -319,7 +378,7 @@ function renderDay(){
   const extras = document.getElementById("dayExtras");
   wrap.innerHTML = ""; extras.innerHTML = "";
   MEALS.forEach(m=>{
-    const target = (m.items && m.items.length) ? wrap : extras;
+    const target = isSingle(m) ? extras : wrap;
     target.appendChild(renderMealBlock(rec, m));
   });
 
@@ -344,27 +403,26 @@ function renderMealBlock(rec, m){
   const block = document.createElement("div");
   block.className = "meal-block";
 
-  if(!items.length){
+  if(isSingle(m)){
     const row = document.createElement("div");
     row.className = "check" + (e.done ? " done" : "");
     row.innerHTML =
       `<span class="box"></span>
-       <span class="ic">${m.icon}</span>
+       <span class="ic">${escapeHtml(m.icon)}</span>
        <span class="meta"><b>${escapeHtml(m.label)}</b>${m.kcal?`<small>${escapeHtml(m.kcal)}</small>`:""}</span>`;
     row.addEventListener("click", ()=>{ e.done = !e.done; save(); renderDay(); renderMonth(); });
     block.appendChild(row);
     return block;
   }
 
-  const got = items.filter(it=> e.items[it.id]).length;
-  const kc  = items.reduce((s,it)=> s + (e.items[it.id]?(Number(it.kcal)||0):0), 0);
-  const allOn = got === items.length;
+  const st = mealStats(e, m);
+  const allOn = st.total > 0 && st.got === st.total;
 
   const head = document.createElement("div");
-  head.className = "meal-head" + (allOn ? " done" : got>0 ? " partial" : "");
+  head.className = "meal-head" + (allOn ? " done" : st.got>0 ? " partial" : "");
   head.innerHTML =
-    `<span class="ic">${m.icon}</span>
-     <span class="meta"><b>${escapeHtml(m.label)}</b><small>${got}/${items.length} itens · ${kc} kcal</small></span>
+    `<span class="ic">${escapeHtml(m.icon)}</span>
+     <span class="meta"><b>${escapeHtml(m.label)}</b><small>${st.got}/${st.total} itens · ${st.kcal} kcal</small></span>
      <span class="meal-toggle">${allOn ? "limpar" : "marcar tudo"}</span>`;
   head.querySelector(".meal-toggle").addEventListener("click", ()=>{
     items.forEach(it=> e.items[it.id] = !allOn);
@@ -379,11 +437,11 @@ function renderMealBlock(rec, m){
     row.innerHTML =
       `<span class="box"></span>
        <span class="item-text">${escapeHtml(it.text)}</span>
-       <span class="item-kcal" title="Clique p/ editar a kcal">${Number(it.kcal)||0} kcal</span>`;
+       <span class="item-kcal" title="Clique p/ editar a kcal">${itemKcal(it)} kcal</span>`;
     row.addEventListener("click", ()=>{ e.items[it.id] = !e.items[it.id]; save(); renderDay(); renderMonth(); });
     row.querySelector(".item-kcal").addEventListener("click", ev=>{
       ev.stopPropagation();
-      const v = prompt("kcal de “" + it.text + "”:", String(Number(it.kcal)||0));
+      const v = prompt("kcal de “" + it.text + "”:", String(itemKcal(it)));
       if(v === null) return;
       const n = parseInt(v, 10);
       if(!isNaN(n) && n >= 0){ it.kcal = n; savePlan(); renderDay(); renderMonth(); }
@@ -397,7 +455,7 @@ function renderMealBlock(rec, m){
     row.innerHTML =
       `<span class="box"></span>
        <span class="item-text">${escapeHtml(x.text)}</span>
-       <span class="item-kcal">${Number(x.kcal)||0} kcal</span>
+       <span class="item-kcal">${itemKcal(x)} kcal</span>
        <button class="item-del" title="Remover">×</button>`;
     row.querySelector(".item-del").addEventListener("click", ev=>{
       ev.stopPropagation();
@@ -486,7 +544,7 @@ function renderMonth(){
 
   const cols = MEALS; // mesmas colunas dos checks
   let head = `<thead><tr><th class="daycol">Dia</th>`;
-  cols.forEach(m=> head += `<th>${m.icon}</th>`);
+  cols.forEach(m=> head += `<th>${escapeHtml(m.icon)}</th>`);
   head += `</tr></thead>`;
 
   const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
@@ -507,15 +565,13 @@ function renderMonth(){
          + `<span class="dnum">${d}</span><span class="dwd">${WD[dow]}</span></td>`;
 
     cols.forEach(m=>{
-      const e = mealEntry(rec, m);
-      const items = m.items || [];
+      const st = mealStats(entryView(rec, m), m);   // read-only: não muta o state
       let cls = "", glyph = "○";
-      if(items.length){
-        const got = items.filter(it=> e.items[it.id]).length;
-        if(got > 0) totals[m.key]++;   // conta o dia se comeu ao menos 1 item da refeição
-        if(got === items.length){ cls="on"; glyph="✓"; }
-        else if(got > 0){ cls="partial"; glyph="•"; }
-      } else if(e.done){ cls="on"; glyph="✓"; totals[m.key]++; }
+      if(st.got > 0){
+        totals[m.key]++;                            // conta o dia se cumpriu ao menos 1 unidade
+        if(st.got === st.total){ cls="on"; glyph="✓"; }
+        else { cls="partial"; glyph="•"; }
+      }
       row += `<td><span class="cell-check ${cls}" data-key="${key}" data-meal="${m.key}">${glyph}</span></td>`;
     });
 

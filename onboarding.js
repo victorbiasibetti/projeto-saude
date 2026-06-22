@@ -203,12 +203,9 @@ function buildPrompt(){
 /* ---------- import do JSON gerado pela IA ---------- */
 const ACCENTS = ["azul","verde","laranja","roxo","cinza"];
 
-// gera chave segura (sem acento/espaço) a partir do título da refeição
-function slugify(s){
-  return String(s).toLowerCase()
-    .normalize("NFD").replace(/[̀-ͯ]/g,"")   // tira acentos
-    .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"") || "ref";
-}
+// gera chave segura (sem acento/espaço) a partir do título da refeição.
+// Reusa planSlug (app.js) pra não divergir do slug usado na migração/ids.
+function slugify(s){ return planSlug(s) || "ref"; }
 // 1ª parte da string de kcal (antes do "·"), ex: "~700 kcal · 40 P..." → "~700 kcal"
 function shortKcal(k){ return (typeof k === "string" ? k.split("·")[0].trim() : ""); }
 
@@ -220,12 +217,12 @@ function deriveMeals(menu){
     while(used.has(key)) key += "_"; // garante unicidade
     used.add(key);
     // itens marcáveis da refeição, com id estável prefixado pela key da refeição
-    const items = (c.items||[]).map((it,i)=>({ id: key+"_"+i, text: it.text, kcal: Number(it.kcal)||0 }));
+    const items = (c.items||[]).map((it,i)=> normItem(it, key, i));
     return { key, icon: c.icon || "🍽️", label: c.title, kcal: shortKcal(c.kcal), items };
   });
-  // a aba Treino e o "dia 100%" dependem deste check — sempre presente, sem itens
+  // a aba Treino e o "dia 100%" dependem deste check — sempre presente, ritual (sem itens)
   if(!used.has("treino"))
-    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"", items:[] });
+    meals.push({ key:"treino", icon:"🏋️", label:"Treino", kcal:"", items:[], single:true });
   return meals;
 }
 
@@ -247,12 +244,10 @@ function sanitizeImport(obj){
     if(!c || typeof c.title !== "string" || !Array.isArray(c.items))
       throw new Error("Uma refeição veio incompleta (faltou nome ou itens).");
     const base = slugify(c.title);
-    const items = c.items.map((x, j)=>{
-      // aceita item objeto {text,kcal} OU string legada (kcal 0)
-      const text = (x && typeof x === "object") ? String(x.text||"") : String(x);
-      const kcal = (x && typeof x === "object") ? (Math.max(0, parseInt(x.kcal,10)) || 0) : 0;
-      return text.trim() ? { id: base+"_"+j, text: text.slice(0,80), kcal } : null;
-    }).filter(Boolean).slice(0,12);
+    // mesma normalização de item usada na migração (normItem, app.js): {id,text,kcal}
+    const items = c.items.map((x, j)=> normItem(x, base, j))
+                         .filter(it=> it.text.trim())
+                         .slice(0,12);
     return {
       title: String(c.title).slice(0,60),
       icon: typeof c.icon === "string" && c.icon ? c.icon : "🍽️",
@@ -353,11 +348,13 @@ function applyImport(text){
     return false;
   }
 
-  // se já existe histórico e as refeições (keys) mudam, os dias antigos passam a
-  // aparecer como não cumpridos (dado não some, fica sob as keys antigas). Confirma antes.
+  // se já existe histórico e as refeições OU seus itens mudam, os checks antigos passam a
+  // aparecer como não cumpridos (o dado não some, fica órfão sob as keys/ids antigos). Confirma
+  // antes. Assinatura inclui ids de item — re-importar trocando itens também avisa.
+  const sig = ms => (ms||[]).map(m=> m.key+":"+(m.items||[]).map(it=>it.id).join("|")).join(",");
   const hadHistory = state && state.days && Object.keys(state.days).length > 0;
-  const keysChange = (plan.meals||[]).map(m=>m.key).join(",") !== newMeals.map(m=>m.key).join(",");
-  if(hadHistory && keysChange){
+  const planChange = sig(plan.meals) !== sig(newMeals);
+  if(hadHistory && planChange){
     ONB.pendingImport = { parsed, newMeals };
     $("onbConfirmDialog").showModal();
     return "pending";

@@ -57,8 +57,8 @@ const DEFAULT_PLAN = {
         { id: "janta_4", text: "Salada",                                    kcal: 180 },
       ],
     },
-    { key: "creatina", icon: "💊", label: "Creatina 5 g", kcal: "todo dia", items: [] },
-    { key: "treino",   icon: "🏋️", label: "Treino",        kcal: "",         items: [] },
+    { key: "creatina", icon: "💊", label: "Creatina 5 g", kcal: "todo dia", items: [], single: true },
+    { key: "treino",   icon: "🏋️", label: "Treino",        kcal: "",         items: [], single: true },
   ],
 
   // Cardápio de referência (cards). Mesmos itens das refeições + um card de
