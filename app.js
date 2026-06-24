@@ -343,8 +343,9 @@ function mealPlanKcal(meal){
 }
 
 /* ---------- fonte ÚNICA de cálculo do dia (usada pelo painel e pela tabela) ----------
-   % do dia = itens marcados / itens planejados (refeição ritual = 1 unidade).
-   Itens avulsos (extra) somam kcal mas NÃO entram no %  — são bônus, não aderência. */
+   % do dia = kcal ingeridas / meta de kcal do dia.
+   Itens avulsos (extra) somam kcal e ENTRAM no % (assim como no contador de kcal).
+   got/total de itens continuam disponíveis para a tabela do mês (perMeal). */
 function dayProgress(key){
   const rec = state.days[key] || {};
   let totalUnits = 0, gotUnits = 0, kcalGot = 0, kcalPlan = 0;
@@ -359,8 +360,8 @@ function dayProgress(key){
     kcalGot    += e.extra.reduce((s,x)=> s + itemKcal(x), 0); // avulsos: só kcal
     perMeal[m.key] = { got: st.got, total: st.total };
   });
-  const pct = totalUnits ? Math.round(gotUnits/totalUnits*100) : 0;
   const kcalDenom = (user && user.targetKcal) ? user.targetKcal : (kcalPlan || 1);
+  const pct = Math.round(kcalGot / kcalDenom * 100);   // % do dia = kcal ingeridas / meta (extras incluídos)
   return { totalUnits, gotUnits, pct, kcalGot, kcalDenom, perMeal };
 }
 
@@ -418,14 +419,13 @@ function renderDay(){
     target.appendChild(renderMealBlock(rec, m));
   });
 
-  // anéis de progresso (% dos itens + kcal ingeridas), via fonte única
+  // anéis de progresso (% e kcal ingeridas) — ambos baseados em kcal ingeridas / meta, via fonte única
   const prog = dayProgress(key);
   const circ = 2*Math.PI*52;
-  document.getElementById("ringFg").style.strokeDashoffset =
-    circ * (1 - (prog.totalUnits ? prog.gotUnits/prog.totalUnits : 0));
+  const frac = Math.min(1, prog.kcalGot / prog.kcalDenom);   // anel enche até 100%; o número pode passar de 100%
+  document.getElementById("ringFg").style.strokeDashoffset = circ * (1 - frac);
   document.getElementById("dayPct").textContent = prog.pct + "%";
 
-  const frac = Math.min(1, prog.kcalGot / prog.kcalDenom);
   document.getElementById("kcalRingFg").style.strokeDashoffset = circ*(1-frac);
   document.getElementById("dayKcal").textContent = prog.kcalGot.toLocaleString("pt-BR");
   document.getElementById("dayKcalSub").textContent = "/ " + prog.kcalDenom.toLocaleString("pt-BR");
@@ -683,9 +683,9 @@ function renderLegend(){
   document.getElementById("dietLegend").innerHTML =
     `<b>Como usar:</b> no painel do topo, marque <b>item por item</b> o que você comeu em cada refeição —
      a kcal de cada item é somada individualmente. Comeu algo fora do plano? Use <b>“➕ comi mais alguma coisa”</b>
-     (soma na kcal do dia, mas não conta no anel de %). Cada dia <b>congela</b> a kcal do item que você
+     (soma na kcal do dia <b>e</b> no anel de %). Cada dia <b>congela</b> a kcal do item que você
      marcou — clique na kcal pra ajustá-la <b>só naquele dia</b> (editar não reescreve o histórico).
-     O anel <b>%</b> do topo é <b>proporcional aos itens</b> marcados (não mais por refeição inteira).
+     O anel <b>%</b> do topo é a <b>kcal ingerida</b> em relação à <b>meta de kcal do dia</b>.
      Na tabela: <b>✓</b> = refeição completa, <b>•</b> = parcial, <b>○</b> = nenhum item; clicar liga/desliga a
      refeição toda naquele dia. Clique no <b>dia</b> (1ª coluna) pra trazê-lo pro topo e editar.`;
 }
